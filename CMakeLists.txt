@@ -38,3 +38,6 @@ target_include_directories(infer_simple PRIVATE ${CMAKE_SOURCE_DIR}/include)
 # Install targets
 install(DIRECTORY include/microgpt DESTINATION include)
 install(TARGETS train infer train_simple infer_simple DESTINATION bin)
+
+# Install man page
+install(FILES docs/microgpt-cpp.7 DESTINATION share/man/man7)

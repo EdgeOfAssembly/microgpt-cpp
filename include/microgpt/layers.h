@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * Neural network layers (RMSNorm, Linear) - based on Andrej Karpathy's microGPT
+ * Original Python implementation: https://gist.github.com/karpathy/8627fe009c40f57531cb18360106ce95
+ */
+
 #include "value.h"
 #include <cassert>
 #include <cmath>

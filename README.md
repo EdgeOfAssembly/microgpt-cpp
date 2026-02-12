@@ -4,6 +4,15 @@ A faithful C++20 port of [Andrej Karpathy's microGPT](https://gist.github.com/ka
 
 This is a **line-by-line translation** from pure Python to modern C++20. No optimizations, no CUDA, no SIMD. The goal is correctness and matching Python behavior.
 
+**Original work by:** [Andrej Karpathy](https://twitter.com/karpathy)  
+**Original Python implementation:** https://gist.github.com/karpathy/8627fe009c40f57531cb18360106ce95
+
+## Documentation
+
+- **Man Page**: See `man microgpt-cpp` after installation, or view `docs/microgpt-cpp.7`
+- **API Reference**: Comprehensive documentation in the man page
+- **Examples**: Both simple and detailed examples in `examples/` directory
+
 ## Features
 
 - **Scalar Autograd**: Direct port of the Python `Value` class with automatic differentiation

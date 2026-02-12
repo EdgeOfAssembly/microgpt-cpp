@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * GPT model implementation - based on Andrej Karpathy's microGPT
+ * Original Python implementation: https://gist.github.com/karpathy/8627fe009c40f57531cb18360106ce95
+ */
+
 #include "utils.h"
 #include "value.h"
 #include "optimizer.h"

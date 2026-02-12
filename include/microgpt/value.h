@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * Scalar autograd Value class - direct port from Andrej Karpathy's microGPT
+ * Original Python implementation: https://gist.github.com/karpathy/8627fe009c40f57531cb18360106ce95
+ */
+
 #include <algorithm>
 #include <cassert>
 #include <cmath>

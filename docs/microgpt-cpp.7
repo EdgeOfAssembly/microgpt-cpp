@@ -1,0 +1,435 @@
+.TH MICROGPT-CPP 7 "2026-02-12" "microgpt-cpp 1.0.0" "microgpt-cpp Simple API Reference"
+.SH NAME
+microgpt-cpp \- A minimal C++20 implementation of GPT training and inference
+.SH SYNOPSIS
+.nf
+.B #include <microgpt/microgpt.h>
+.sp
+.B Training:
+.br
+auto docs = microgpt::load_docs("data/names.txt");
+.br
+microgpt::Tokenizer tokenizer;
+.br
+tokenizer.fit(docs);
+.br
+microgpt::Config config{...};
+.br
+microgpt::GPT model(config);
+.br
+microgpt::Adam optimizer(...);
+.br
+.sp
+for (int step = 0; step < num_steps; ++step) {
+.br
+    microgpt::ValueStorage storage;
+.br
+    auto tokens = tokenizer.encode(docs[step % docs.size()]);
+.br
+    double loss = model.train_step(tokens, optimizer, storage);
+.br
+}
+.br
+model.save_weights("model.bin", tokenizer);
+.sp
+.B Inference:
+.br
+auto [model, tokenizer] = microgpt::GPT::load_weights("model.bin");
+.br
+auto tokens = model.generate(tokenizer.BOS, max_len, temperature);
+.br
+std::string text = tokenizer.decode(tokens);
+.fi
+.SH DESCRIPTION
+.B microgpt-cpp
+is a faithful C++20 port of Andrej Karpathy's microGPT, providing a minimal, 
+dependency-free implementation of GPT (Generative Pre-trained Transformer) 
+training and inference using a graph-based scalar autograd approach.
+.PP
+The library is designed to be educational and easy to understand, translating
+the original Python implementation line-by-line to modern C++20 without
+optimizations, CUDA, or SIMD. It uses a scalar autograd system with the
+.B Value
+class for automatic differentiation.
+.PP
+.B Original Python implementation by Andrej Karpathy:
+.br
+https://gist.github.com/karpathy/8627fe009c40f57531cb18360106ce95
+.SH API REFERENCE
+.SS Core Classes
+.TP
+.B Config
+Model configuration structure:
+.nf
+struct Config {
+    int vocab_size;   // Vocabulary size
+    int n_embd;       // Embedding dimension  
+    int n_head;       // Number of attention heads
+    int n_layer;      // Number of transformer layers
+    int block_size;   // Maximum sequence length
+};
+.fi
+.TP
+.B GPT
+Main model class with the following methods:
+.RS
+.TP
+.B GPT(const Config& config)
+Construct a new GPT model with the given configuration.
+.TP
+.B double train_step(const std::vector<int>& tokens, Adam& optimizer, ValueStorage& storage)
+Perform one training step on a token sequence. Returns the loss value.
+The storage parameter should be a fresh ValueStorage instance for each step.
+.TP
+.B std::vector<int> generate(int start_token, int max_length, double temperature = 1.0)
+Generate a sequence autoregressively starting from start_token. The temperature
+parameter controls randomness (lower = more deterministic, higher = more random).
+Returns a vector of generated token IDs.
+.TP
+.B void save_weights(const std::string& filename, const Tokenizer& tokenizer) const
+Save model weights and configuration to a binary file, along with the tokenizer.
+.TP
+.B static std::pair<GPT, Tokenizer> load_weights(const std::string& filename)
+Load a pre-trained model and tokenizer from a binary file. Returns a pair
+containing the model and tokenizer.
+.RE
+.TP
+.B Tokenizer
+Character-level tokenizer with the following methods:
+.RS
+.TP
+.B void fit(const std::vector<std::string>& docs)
+Build the vocabulary from a collection of documents.
+.TP
+.B std::vector<int> encode(const std::string& text) const
+Convert text to a sequence of token IDs. Adds BOS (beginning of sequence)
+tokens at start and end.
+.TP
+.B std::string decode(const std::vector<int>& tokens) const
+Convert a sequence of token IDs back to text, removing BOS tokens.
+.RE
+.TP
+.B Adam
+Adam optimizer with cosine learning rate schedule:
+.RS
+.TP
+.B Adam(double lr, double beta1, double beta2, double eps)
+Construct an Adam optimizer with the given hyperparameters:
+.br
+lr: learning rate
+.br
+beta1: exponential decay rate for first moment (default: 0.9)
+.br
+beta2: exponential decay rate for second moment (default: 0.95)
+.br
+eps: small constant for numerical stability (default: 1e-8)
+.TP
+.B void init(size_t num_params)
+Initialize optimizer state for the given number of parameters.
+.TP
+.B void step(std::vector<Value*>& params, int total_steps)
+Perform one optimization step, updating all parameters.
+.RE
+.TP
+.B ValueStorage
+Arena allocator for Value objects in the computation graph. Should be
+created fresh for each training step to prevent memory accumulation.
+Automatically manages the lifetime of intermediate computation nodes.
+.SS Utility Functions
+.TP
+.B std::vector<std::string> load_docs(const std::string& filename)
+Load documents from a text file, one per line. Returns a vector of strings.
+.TP
+.B void shuffle(std::vector<std::string>& docs)
+Randomly shuffle a vector of documents in place.
+.TP
+.B std::vector<Value*> softmax(const std::vector<Value*>& logits, ValueStorage& storage)
+Apply softmax function to a vector of logits, returning normalized probabilities.
+Includes numerical stability improvements.
+.SS Layer Functions
+.TP
+.B std::vector<Value*> rmsnorm(const std::vector<Value*>& x, ValueStorage& storage)
+Apply RMS (Root Mean Square) normalization to input vector x.
+.TP
+.B std::vector<Value*> linear(const std::vector<Value*>& x, const std::vector<std::vector<Value>>& w, ValueStorage& storage)
+Apply linear transformation (matrix-vector multiplication) using weight matrix w.
+.SH EXAMPLES
+.SS Simple Training Example
+.nf
+#include <microgpt/microgpt.h>
+using namespace microgpt;
+
+int main() {
+    // 1. Load and prepare dataset
+    auto docs = load_docs("data/names.txt");
+    shuffle(docs);
+    
+    Tokenizer tokenizer;
+    tokenizer.fit(docs);
+    
+    // 2. Configure model
+    Config config{
+        .vocab_size = tokenizer.vocab_size,
+        .n_embd = 16,
+        .n_head = 4,
+        .n_layer = 1,
+        .block_size = 8
+    };
+    
+    GPT model(config);
+    
+    // 3. Initialize optimizer
+    Adam optimizer(1e-2, 0.9, 0.95, 1e-8);
+    optimizer.init(model.state_dict.get_all_params().size());
+    
+    // 4. Training loop
+    for (int step = 0; step < 500; ++step) {
+        ValueStorage storage;  // Fresh storage each step
+        
+        const auto tokens = tokenizer.encode(
+            docs[step % docs.size()]
+        );
+        
+        double loss = model.train_step(tokens, optimizer, storage);
+        
+        if ((step + 1) % 10 == 0) {
+            std::cout << "step " << (step + 1) 
+                     << " | loss " << loss << std::endl;
+        }
+    }
+    
+    // 5. Save trained model
+    model.save_weights("model_weights.bin", tokenizer);
+    
+    return 0;
+}
+.fi
+.SS Simple Inference Example
+.nf
+#include <microgpt/microgpt.h>
+using namespace microgpt;
+
+int main() {
+    // 1. Load pre-trained model
+    auto [model, tokenizer] = GPT::load_weights("model_weights.bin");
+    
+    // 2. Generate samples
+    const double temperature = 0.5;
+    
+    for (int i = 0; i < 20; ++i) {
+        auto tokens = model.generate(
+            tokenizer.BOS,
+            model.config.block_size,
+            temperature
+        );
+        
+        std::string sample = tokenizer.decode(tokens);
+        std::cout << "sample " << (i + 1) 
+                 << ": " << sample << std::endl;
+    }
+    
+    return 0;
+}
+.fi
+.SS Training with Custom Configuration
+.nf
+#include <microgpt/microgpt.h>
+using namespace microgpt;
+
+int main() {
+    // Load dataset
+    auto docs = load_docs("data/shakespeare.txt");
+    shuffle(docs);
+    
+    // Create tokenizer
+    Tokenizer tokenizer;
+    tokenizer.fit(docs);
+    
+    // Configure a larger model
+    Config config{
+        .vocab_size = tokenizer.vocab_size,
+        .n_embd = 64,        // Larger embedding
+        .n_head = 8,         // More attention heads
+        .n_layer = 4,        // More layers
+        .block_size = 128    // Longer context
+    };
+    
+    GPT model(config);
+    std::cout << "Model parameters: " 
+             << model.state_dict.get_all_params().size() 
+             << std::endl;
+    
+    // Train with custom learning rate
+    Adam optimizer(5e-3, 0.9, 0.98, 1e-9);
+    optimizer.init(model.state_dict.get_all_params().size());
+    
+    const int num_steps = 2000;
+    
+    for (int step = 0; step < num_steps; ++step) {
+        ValueStorage storage;
+        
+        const std::string& doc = docs[step % docs.size()];
+        const auto tokens = tokenizer.encode(doc);
+        
+        double loss = model.train_step(tokens, optimizer, storage);
+        
+        if ((step + 1) % 100 == 0) {
+            std::cout << "step " << (step + 1) << "/" << num_steps
+                     << " | loss " << std::fixed 
+                     << std::setprecision(4) << loss << std::endl;
+        }
+    }
+    
+    model.save_weights("shakespeare_model.bin", tokenizer);
+    
+    return 0;
+}
+.fi
+.SS Temperature-Controlled Generation
+.nf
+#include <microgpt/microgpt.h>
+using namespace microgpt;
+
+int main() {
+    auto [model, tokenizer] = GPT::load_weights("model_weights.bin");
+    
+    // Compare different temperatures
+    std::vector<double> temperatures = {0.1, 0.5, 1.0, 1.5};
+    
+    for (double temp : temperatures) {
+        std::cout << "\\nTemperature " << temp << ":\\n";
+        
+        for (int i = 0; i < 5; ++i) {
+            auto tokens = model.generate(
+                tokenizer.BOS,
+                model.config.block_size,
+                temp
+            );
+            
+            std::cout << "  " << tokenizer.decode(tokens) << std::endl;
+        }
+    }
+    
+    return 0;
+}
+.fi
+.SH ARCHITECTURE
+The GPT model implements a simplified transformer architecture with the following
+components:
+.TP
+.B Token and Position Embeddings
+Each token is embedded into a continuous vector space, with positional information
+added to preserve sequence order.
+.TP
+.B Transformer Layers
+Each layer contains:
+.RS
+.IP \(bu 3
+RMSNorm (Root Mean Square Normalization)
+.IP \(bu 3
+Multi-head causal self-attention with KV cache
+.IP \(bu 3
+Residual connections
+.IP \(bu 3
+MLP (Multi-Layer Perceptron) with ReLU² activation
+.RE
+.TP
+.B Output Projection
+Final linear layer projects to vocabulary logits for next-token prediction.
+.PP
+The autograd system uses the
+.B Value
+class to represent scalar nodes in a computation graph. The
+.B ValueStorage
+class manages these nodes using std::deque to ensure pointer stability during
+graph construction and backpropagation.
+.SH FILES
+.TP
+.B include/microgpt/microgpt.h
+Main umbrella header that includes all components
+.TP
+.B include/microgpt/value.h
+Scalar autograd Value class and ValueStorage
+.TP
+.B include/microgpt/model.h
+GPT model class with Config and StateDict
+.TP
+.B include/microgpt/layers.h
+Neural network layer functions (RMSNorm, Linear)
+.TP
+.B include/microgpt/optimizer.h
+Adam optimizer implementation
+.TP
+.B include/microgpt/utils.h
+Utility functions (tokenizer, softmax, data loading)
+.TP
+.B examples/train_simple.cpp
+Simple 69-line training example
+.TP
+.B examples/infer_simple.cpp
+Simple 27-line inference example
+.TP
+.B examples/train.cpp
+Detailed training example with explicit loss computation
+.TP
+.B examples/infer.cpp
+Detailed inference example with manual weight loading
+.SH BUILDING
+.nf
+# Clone the repository
+git clone git@github.com:EdgeOfAssembly/microgpt-cpp.git
+cd microgpt-cpp
+
+# Build with CMake
+cmake -B build && make -j$(nproc) -C build
+
+# Run examples
+cd build
+./train_simple
+./infer_simple
+.fi
+.SH NOTES
+.TP
+.B Memory Management
+Each training step should use a fresh
+.B ValueStorage
+instance. The storage goes out of scope after the backward pass, cleaning up
+the computation graph. This prevents memory accumulation during training.
+.TP
+.B Performance
+This is an educational implementation prioritizing clarity over speed. It uses
+scalar operations without BLAS, SIMD, or GPU acceleration. For production use,
+consider the planned optimizations in future releases.
+.TP
+.B Numerical Stability
+The implementation includes safeguards against NaN and infinity values, with
+checks in softmax, RMSNorm, and other operations. Temperature scaling should
+be positive and non-zero.
+.SH BUGS
+Report bugs to: https://github.com/EdgeOfAssembly/microgpt-cpp/issues
+.SH SEE ALSO
+.TP
+.B Project Repository
+https://github.com/EdgeOfAssembly/microgpt-cpp
+.TP
+.B Original microGPT (Python)
+https://gist.github.com/karpathy/8627fe009c40f57531cb18360106ce95
+.TP
+.B Attention Is All You Need (Transformer paper)
+https://arxiv.org/abs/1706.03762
+.TP
+.B GPT-2 Paper
+https://d4mucfpksywv.cloudfront.net/better-language-models/language_models_are_unsupervised_multitask_learners.pdf
+.SH AUTHOR
+EdgeOfAssembly
+.PP
+Based on microGPT by Andrej Karpathy
+.br
+Original Python implementation: https://gist.github.com/karpathy/8627fe009c40f57531cb18360106ce95
+.SH COPYRIGHT
+Copyright (c) 2026 EdgeOfAssembly
+.PP
+MIT License - See LICENSE file for details
+.PP
+This is a derivative work based on Andrej Karpathy's microGPT, distributed
+under the MIT License.
