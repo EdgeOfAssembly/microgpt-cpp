@@ -1,10 +1,13 @@
 #pragma once
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <deque>
+#include <limits>
 #include <memory>
 #include <set>
+#include <stdexcept>
 #include <vector>
 
 namespace microgpt {
@@ -14,24 +17,43 @@ namespace microgpt {
  * Direct port of Python's Value class for scalar autograd.
  * 
  * IMPORTANT: All Value objects must outlive any backward() calls on values that depend on them.
- * The recommended pattern is to store all intermediate computation results in vectors.
+ * The recommended pattern is to store all intermediate computation results in ValueStorage.
  */
 class Value {
 public:
     double data;  // scalar value calculated during forward pass
     double grad;  // derivative of loss w.r.t. this node, calculated in backward pass
 
-    Value(double data = 0.0) : data(data), grad(0.0), children_(), local_grads_() {}
+    Value(double data = 0.0) : data(data), grad(0.0), children_(), local_grads_() {
+        // Check for NaN or infinity
+        assert(std::isfinite(data) && "Value initialized with NaN or infinity");
+    }
 
     Value(double data, std::vector<Value*> children, std::vector<double> local_grads)
-        : data(data), grad(0.0), children_(std::move(children)), local_grads_(std::move(local_grads)) {}
+        : data(data), grad(0.0), children_(std::move(children)), local_grads_(std::move(local_grads)) {
+        assert(std::isfinite(data) && "Value initialized with NaN or infinity");
+        assert(children_.size() == local_grads_.size() && "Mismatched children and local_grads sizes");
+        
+        // Validate all children pointers are non-null
+        for (const auto* child : children_) {
+            assert(child != nullptr && "Null pointer in children");
+        }
+    }
 
     // Addition
     Value operator+(const Value& other) const {
+        // Check for overflow
+        if (data > 0 && other.data > 0 && data > std::numeric_limits<double>::max() - other.data) {
+            throw std::overflow_error("Addition would overflow");
+        }
+        if (data < 0 && other.data < 0 && data < std::numeric_limits<double>::lowest() - other.data) {
+            throw std::underflow_error("Addition would underflow");
+        }
         return Value(data + other.data, {const_cast<Value*>(this), const_cast<Value*>(&other)}, {1.0, 1.0});
     }
 
     Value operator+(double other) const {
+        assert(std::isfinite(other) && "Adding NaN or infinity");
         return Value(data + other, {const_cast<Value*>(this)}, {1.0});
     }
 
@@ -41,12 +63,17 @@ public:
 
     // Multiplication
     Value operator*(const Value& other) const {
-        return Value(data * other.data, {const_cast<Value*>(this), const_cast<Value*>(&other)},
+        const double result = data * other.data;
+        assert(std::isfinite(result) && "Multiplication resulted in NaN or infinity");
+        return Value(result, {const_cast<Value*>(this), const_cast<Value*>(&other)},
                      {other.data, data});
     }
 
     Value operator*(double other) const {
-        return Value(data * other, {const_cast<Value*>(this)}, {other});
+        assert(std::isfinite(other) && "Multiplying by NaN or infinity");
+        const double result = data * other;
+        assert(std::isfinite(result) && "Multiplication resulted in NaN or infinity");
+        return Value(result, {const_cast<Value*>(this)}, {other});
     }
 
     friend Value operator*(double lhs, const Value& rhs) {
@@ -67,17 +94,38 @@ public:
 
     // Power
     Value pow(double exponent) const {
-        double result = std::pow(data, exponent);
-        double local_grad = exponent * std::pow(data, exponent - 1);
+        assert(std::isfinite(exponent) && "Power exponent is NaN or infinity");
+        
+        // Check for domain errors
+        if (data < 0.0 && std::floor(exponent) != exponent) {
+            throw std::domain_error("Negative base with non-integer exponent");
+        }
+        if (data == 0.0 && exponent < 0.0) {
+            throw std::domain_error("Zero to negative power (division by zero)");
+        }
+        
+        const double result = std::pow(data, exponent);
+        assert(std::isfinite(result) && "Power resulted in NaN or infinity");
+        
+        const double local_grad = exponent * std::pow(data, exponent - 1);
+        assert(std::isfinite(local_grad) && "Power gradient is NaN or infinity");
+        
         return Value(result, {const_cast<Value*>(this)}, {local_grad});
     }
 
     // Division
     Value operator/(const Value& other) const {
+        if (std::abs(other.data) < std::numeric_limits<double>::epsilon()) {
+            throw std::domain_error("Division by zero or near-zero value");
+        }
         return (*this) * other.pow(-1);
     }
 
     Value operator/(double other) const {
+        if (std::abs(other) < std::numeric_limits<double>::epsilon()) {
+            throw std::domain_error("Division by zero or near-zero value");
+        }
+        assert(std::isfinite(other) && "Dividing by NaN or infinity");
         return (*this) * (1.0 / other);
     }
 
@@ -87,31 +135,69 @@ public:
 
     // Mathematical functions
     Value log() const {
-        return Value(std::log(data), {const_cast<Value*>(this)}, {1.0 / data});
+        if (data <= 0.0) {
+            throw std::domain_error("Log of non-positive value");
+        }
+        const double result = std::log(data);
+        assert(std::isfinite(result) && "Log resulted in NaN or infinity");
+        return Value(result, {const_cast<Value*>(this)}, {1.0 / data});
     }
 
     Value exp() const {
-        double result = std::exp(data);
+        // Check for potential overflow
+        if (data > 700.0) {  // exp(700) is near double max
+            throw std::overflow_error("Exp would overflow");
+        }
+        const double result = std::exp(data);
+        assert(std::isfinite(result) && "Exp resulted in NaN or infinity");
         return Value(result, {const_cast<Value*>(this)}, {result});
     }
 
     Value relu() const {
-        double result = std::max(0.0, data);
-        double local_grad = (data > 0) ? 1.0 : 0.0;
+        const double result = std::max(0.0, data);
+        const double local_grad = (data > 0) ? 1.0 : 0.0;
         return Value(result, {const_cast<Value*>(this)}, {local_grad});
     }
 
-    // Backward pass
+    // Backward pass with safety checks
     void backward() {
         std::vector<Value*> topo;
         std::set<Value*> visited;
-        build_topo(this, topo, visited);
+        
+        try {
+            build_topo(this, topo, visited);
+        } catch (const std::exception& e) {
+            throw std::runtime_error(std::string("Error building computation graph: ") + e.what());
+        }
 
         grad = 1.0;
         std::reverse(topo.begin(), topo.end());
+        
         for (Value* v : topo) {
+            assert(v != nullptr && "Null pointer in topological order");
+            
+            // Validate this node hasn't been freed
+            assert(std::isfinite(v->data) && "Node data is NaN or infinity (possible use-after-free)");
+            assert(std::isfinite(v->grad) && "Node grad is NaN or infinity");
+            
             for (size_t i = 0; i < v->children_.size(); ++i) {
-                v->children_[i]->grad += v->local_grads_[i] * v->grad;
+                Value* child = v->children_[i];
+                
+                // Critical pointer validation
+                if (child == nullptr) {
+                    throw std::runtime_error("Null child pointer detected in computation graph");
+                }
+                
+                // Validate gradient computation
+                const double grad_contribution = v->local_grads_[i] * v->grad;
+                assert(std::isfinite(grad_contribution) && "Gradient contribution is NaN or infinity");
+                
+                child->grad += grad_contribution;
+                
+                // Check for gradient explosion
+                if (std::abs(child->grad) > 1e10) {
+                    // Warning: gradient may be exploding (but continue)
+                }
             }
         }
     }
@@ -121,9 +207,25 @@ private:
     std::vector<double> local_grads_;
 
     void build_topo(Value* v, std::vector<Value*>& topo, std::set<Value*>& visited) const {
+        if (v == nullptr) {
+            throw std::runtime_error("Null pointer in computation graph");
+        }
+        
+        // Check for cycles (shouldn't happen in DAG, but detect infinite recursion)
+        if (topo.size() > 100000) {
+            throw std::runtime_error("Computation graph too large or has cycle");
+        }
+        
         if (visited.find(v) == visited.end()) {
             visited.insert(v);
+            
+            // Validate this node hasn't been corrupted
+            assert(std::isfinite(v->data) && "Corrupted node in graph (NaN/inf data)");
+            
             for (Value* child : v->children_) {
+                if (child == nullptr) {
+                    throw std::runtime_error("Null child pointer in graph traversal");
+                }
                 build_topo(child, topo, visited);
             }
             topo.push_back(v);
@@ -132,7 +234,7 @@ private:
 };
 
 /**
- * Helper to store intermediate Value computation nodes
+ * Helper to store intermediate Value computation nodes with safety checks
  * Use this to ensure all Values in a computation stay alive for backward pass
  */
 class ValueStorage {
@@ -140,12 +242,31 @@ public:
     std::deque<Value> values;  // deque ensures pointers remain valid when growing
     
     Value* store(Value&& v) {
+        // Validate the value before storing
+        assert(std::isfinite(v.data) && "Attempting to store NaN or infinity");
+        
         values.push_back(std::move(v));
-        return &values.back();
+        Value* ptr = &values.back();
+        
+        // Validate pointer is in valid range
+        assert(ptr != nullptr && "Storage returned null pointer");
+        
+        return ptr;
     }
     
     void clear() {
         values.clear();
+    }
+    
+    size_t size() const {
+        return values.size();
+    }
+    
+    // Check for memory usage growth
+    void check_size_limit(size_t max_size = 1000000) const {
+        if (values.size() > max_size) {
+            throw std::runtime_error("ValueStorage exceeded size limit - possible memory leak");
+        }
     }
 };
 

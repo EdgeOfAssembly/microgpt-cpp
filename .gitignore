@@ -1,0 +1,39 @@
+# Build artifacts
+build/
+*.o
+*.a
+*.so
+*.dylib
+*.exe
+
+# Generated binaries
+train
+infer
+test_*
+!test_*.cpp
+
+# Model files
+*.bin
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.log
+*.tmp
+input.txt
+output.txt
+*_output.txt
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo

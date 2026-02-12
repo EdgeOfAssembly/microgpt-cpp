@@ -29,10 +29,24 @@ int main() {
     config.n_layer = 1;
     config.block_size = 8;
 
+    // Validate configuration
+    assert(config.vocab_size > 0 && "Invalid vocab size");
+    assert(config.n_embd > 0 && "Invalid embedding dimension");
+    assert(config.n_head > 0 && "Invalid number of heads");
+    assert(config.n_layer > 0 && "Invalid number of layers");
+    assert(config.block_size > 0 && "Invalid block size");
+    assert(config.n_embd % config.n_head == 0 && "n_embd must be divisible by n_head");
+
     // Initialize model
     std::cout << "Initializing model..." << std::endl;
     GPT model(config);
     auto params = model.state_dict.get_all_params();
+    
+    // Validate all parameters
+    for (const auto* param : params) {
+        assert(param != nullptr && "Null parameter pointer detected");
+    }
+    
     std::cout << "num params: " << params.size() << std::endl;
 
     // Initialize optimizer
@@ -40,7 +54,7 @@ int main() {
     optimizer.init(params.size());
 
     // Training loop
-    int num_steps = 500;
+    const int num_steps = 500;
     std::cout << "\nTraining..." << std::endl;
 
     for (int step = 0; step < num_steps; ++step) {
@@ -49,33 +63,68 @@ int main() {
         
         // Sample a document
         const std::string& doc = docs[step % docs.size()];
-        auto tokens = tokenizer.encode(doc);
-        int n = std::min(config.block_size, static_cast<int>(tokens.size()) - 1);
+        const auto tokens = tokenizer.encode(doc);
+        const int n = std::min(config.block_size, static_cast<int>(tokens.size()) - 1);
+
+        if (n <= 0) {
+            continue;  // Skip empty sequences
+        }
 
         // Forward pass
-        std::vector<std::vector<std::vector<Value>>> keys(config.n_layer);
-        std::vector<std::vector<std::vector<Value>>> values(config.n_layer);
-        std::vector<Value> losses;
+        std::vector<std::vector<std::vector<Value*>>> keys(config.n_layer);
+        std::vector<std::vector<std::vector<Value*>>> values(config.n_layer);
+        std::vector<Value*> losses;
+        losses.reserve(n);
 
         for (int pos_id = 0; pos_id < n; ++pos_id) {
-            int token_id = tokens[pos_id];
-            int target_id = tokens[pos_id + 1];
+            const int token_id = tokens[pos_id];
+            const int target_id = tokens[pos_id + 1];
+
+            // Bounds checking
+            assert(token_id >= 0 && token_id < config.vocab_size && "Token ID out of range");
+            assert(target_id >= 0 && target_id < config.vocab_size && "Target ID out of range");
 
             auto logits = model.forward(token_id, pos_id, keys, values, storage);
+            
+            // Validate logits
+            assert(!logits.empty() && "Forward pass returned empty logits");
+            for (const auto* logit : logits) {
+                assert(logit != nullptr && "Null logit pointer");
+            }
+            
             auto probs = softmax(logits, storage);
-            Value loss_t = *storage.store(-(probs[target_id].log()));
+            
+            // Validate probs
+            assert(static_cast<int>(probs.size()) == config.vocab_size && "Probability size mismatch");
+            assert(probs[target_id] != nullptr && "Null probability pointer at target");
+            
+            Value* loss_t = storage.store(-(probs[target_id]->log()));
+            assert(loss_t != nullptr && "Null loss pointer");
             losses.push_back(loss_t);
         }
 
         // Average loss
         Value* loss = storage.store(Value(0.0));
-        for (const auto& l : losses) {
-            loss = storage.store(*loss + l);
+        assert(loss != nullptr && "Null loss accumulator");
+        
+        for (const auto* l : losses) {
+            assert(l != nullptr && "Null loss in losses vector");
+            loss = storage.store(*loss + *l);
+            assert(loss != nullptr && "Null loss after accumulation");
         }
-        loss = storage.store(*loss / static_cast<double>(n));
+        
+        Value* n_val = storage.store(Value(static_cast<double>(n)));
+        assert(n_val != nullptr && "Null n_val");
+        loss = storage.store(*loss / *n_val);
+        assert(loss != nullptr && "Null loss after averaging");
 
         // Backward pass
-        loss->backward();
+        try {
+            loss->backward();
+        } catch (const std::exception& e) {
+            std::cerr << "Error in backward pass at step " << step << ": " << e.what() << std::endl;
+            return 1;
+        }
 
         // Optimizer step
         optimizer.step(params, num_steps);
@@ -106,6 +155,7 @@ int main() {
 
         // Save parameters
         for (const auto* p : params) {
+            assert(p != nullptr && "Null parameter during save");
             outfile.write(reinterpret_cast<const char*>(&p->data), sizeof(double));
         }
         outfile.close();

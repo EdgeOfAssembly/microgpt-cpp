@@ -81,73 +81,152 @@ inline std::vector<std::string> load_docs(const std::string& filename) {
 }
 
 /**
- * Softmax function for Value vectors
+ * Softmax function for Value vectors - returns pointers to avoid copying
+ * All intermediate values are stored to ensure proper gradient flow
+ * Includes safety checks for numerical stability
  */
-inline std::vector<Value> softmax(const std::vector<Value>& logits, ValueStorage& storage) {
+inline std::vector<Value*> softmax(const std::vector<Value*>& logits, ValueStorage& storage) {
+    assert(!logits.empty() && "Softmax called with empty logits");
+    
     // Find max value for numerical stability
-    double max_val = logits[0].data;
-    for (const auto& val : logits) {
-        if (val.data > max_val) {
-            max_val = val.data;
+    double max_val = logits[0]->data;
+    for (const auto* val : logits) {
+        assert(val != nullptr && "Null pointer in logits");
+        assert(std::isfinite(val->data) && "NaN or infinity in logits");
+        if (val->data > max_val) {
+            max_val = val->data;
         }
     }
+
+    // Store max_val as a Value so it can be part of the computation graph
+    Value* max_val_node = storage.store(Value(max_val));
 
     // Compute exp(x - max) and sum
     std::vector<Value*> exps;
     exps.reserve(logits.size());
     Value* total = storage.store(Value(0.0));
     
-    for (const auto& val : logits) {
-        Value* exp_val = storage.store(val - max_val);
-        exp_val = storage.store(exp_val->exp());
+    for (const auto* val : logits) {
+        Value* diff = storage.store(*val - *max_val_node);
+        Value* exp_val = storage.store(diff->exp());
         exps.push_back(exp_val);
         total = storage.store(*total + *exp_val);
     }
 
-    // Normalize
-    std::vector<Value> probs;
-    probs.reserve(exps.size());
-    for (auto* e : exps) {
-        probs.push_back(*storage.store(*e / *total));
+    // Check for numerical issues
+    if (total->data < std::numeric_limits<double>::epsilon()) {
+        throw std::runtime_error("Softmax normalization term too small (numerical instability)");
     }
+
+    // Normalize - IMPORTANT: store pow result before using it
+    std::vector<Value*> probs;
+    probs.reserve(exps.size());
+    Value* total_inv = storage.store(total->pow(-1));  // Store intermediate!
+    
+    double prob_sum = 0.0;
+    for (auto* e : exps) {
+        Value* prob = storage.store(*e * *total_inv);
+        probs.push_back(prob);
+        prob_sum += prob->data;
+    }
+    
+    // Verify probabilities sum to 1 (within tolerance)
+    assert(std::abs(prob_sum - 1.0) < 1e-6 && "Softmax probabilities don't sum to 1");
+    
     return probs;
 }
 
 /**
- * RMS normalization
+ * RMS normalization - returns pointers to avoid copying
+ * Includes safety checks for division by zero
  */
-inline std::vector<Value> rmsnorm(const std::vector<Value>& x, ValueStorage& storage) {
+inline std::vector<Value*> rmsnorm(const std::vector<Value*>& x, ValueStorage& storage) {
+    assert(!x.empty() && "RMSNorm called with empty input");
+    
+    // Check for null pointers and validate data
+    for (const auto* xi : x) {
+        assert(xi != nullptr && "Null pointer in rmsnorm input");
+        assert(std::isfinite(xi->data) && "NaN or infinity in rmsnorm input");
+    }
+    
     Value* ms = storage.store(Value(0.0));
-    for (const auto& xi : x) {
-        Value* sq = storage.store(xi * xi);
+    for (const auto* xi : x) {
+        Value* sq = storage.store(*xi * *xi);
         ms = storage.store(*ms + *sq);
     }
-    ms = storage.store(*ms / static_cast<double>(x.size()));
-    Value* scale = storage.store((*ms + 1e-5).pow(-0.5));
+    
+    // Check size to prevent overflow in static_cast
+    if (x.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+        throw std::overflow_error("Vector size too large for rmsnorm");
+    }
+    
+    Value* size_val = storage.store(Value(static_cast<double>(x.size())));
+    ms = storage.store(*ms / *size_val);
+    Value* eps_val = storage.store(Value(1e-5));
+    Value* ms_eps = storage.store(*ms + *eps_val);
+    
+    // Validate before pow
+    if (ms_eps->data <= 0.0) {
+        throw std::domain_error("RMSNorm: mean square + epsilon is non-positive");
+    }
+    
+    Value* scale = storage.store(ms_eps->pow(-0.5));
+    
+    // Check scale is reasonable
+    if (!std::isfinite(scale->data) || std::abs(scale->data) > 1e10) {
+        throw std::runtime_error("RMSNorm scale is invalid or too large");
+    }
 
-    std::vector<Value> result;
+    std::vector<Value*> result;
     result.reserve(x.size());
-    for (const auto& xi : x) {
-        result.push_back(*storage.store(xi * *scale));
+    for (const auto* xi : x) {
+        result.push_back(storage.store(*xi * *scale));
     }
     return result;
 }
 
 /**
- * Linear layer (matrix-vector multiplication)
+ * Linear layer (matrix-vector multiplication) - returns pointers to avoid copying
+ * Includes bounds checking and overflow detection
  */
-inline std::vector<Value> linear(const std::vector<Value>& x,
-                                  const std::vector<std::vector<Value>>& w,
-                                  ValueStorage& storage) {
-    std::vector<Value> result;
+inline std::vector<Value*> linear(const std::vector<Value*>& x,
+                                   const std::vector<std::vector<Value>>& w,
+                                   ValueStorage& storage) {
+    assert(!x.empty() && "Linear called with empty input");
+    assert(!w.empty() && "Linear called with empty weight matrix");
+    
+    // Validate dimensions
+    for (const auto& wo : w) {
+        if (wo.size() != x.size()) {
+            throw std::invalid_argument("Linear: weight matrix dimensions don't match input");
+        }
+    }
+    
+    // Check for null pointers in input
+    for (const auto* xi : x) {
+        assert(xi != nullptr && "Null pointer in linear input");
+        assert(std::isfinite(xi->data) && "NaN or infinity in linear input");
+    }
+    
+    std::vector<Value*> result;
     result.reserve(w.size());
+    
     for (const auto& wo : w) {
         Value* sum = storage.store(Value(0.0));
         for (size_t i = 0; i < x.size(); ++i) {
-            Value* prod = storage.store(wo[i] * x[i]);
+            // Validate weight
+            assert(std::isfinite(wo[i].data) && "NaN or infinity in weight matrix");
+            
+            Value* prod = storage.store(wo[i] * *x[i]);
             sum = storage.store(*sum + *prod);
         }
-        result.push_back(*sum);
+        
+        // Check for numerical issues
+        if (!std::isfinite(sum->data)) {
+            throw std::runtime_error("Linear layer produced NaN or infinity");
+        }
+        
+        result.push_back(sum);
     }
     return result;
 }

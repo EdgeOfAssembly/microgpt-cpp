@@ -29,15 +29,15 @@ public:
     }
 
     /**
-     * Perform one optimization step
+     * Perform one optimization step - uses const reference to avoid copying
      * @param params Vector of pointers to all model parameters
      * @param num_steps Total number of training steps (for cosine schedule)
      */
-    void step(std::vector<Value*>& params, int num_steps) {
+    void step(const std::vector<Value*>& params, int num_steps) {
         step_count++;
 
         // Cosine learning rate decay
-        double lr_t = learning_rate * 0.5 * (1.0 + std::cos(M_PI * step_count / num_steps));
+        const double lr_t = learning_rate * 0.5 * (1.0 + std::cos(M_PI * step_count / num_steps));
 
         for (size_t i = 0; i < params.size(); ++i) {
             Value* p = params[i];
@@ -49,10 +49,10 @@ public:
             v[i] = beta2 * v[i] + (1.0 - beta2) * p->grad * p->grad;
 
             // Compute bias-corrected first moment estimate
-            double m_hat = m[i] / (1.0 - std::pow(beta1, step_count));
+            const double m_hat = m[i] / (1.0 - std::pow(beta1, step_count));
 
             // Compute bias-corrected second raw moment estimate
-            double v_hat = v[i] / (1.0 - std::pow(beta2, step_count));
+            const double v_hat = v[i] / (1.0 - std::pow(beta2, step_count));
 
             // Update parameters
             p->data -= lr_t * m_hat / (std::sqrt(v_hat) + eps);
@@ -63,9 +63,9 @@ public:
     }
 
     /**
-     * Zero all gradients
+     * Zero all gradients - uses const reference to avoid copying
      */
-    void zero_grad(std::vector<Value*>& params) {
+    void zero_grad(const std::vector<Value*>& params) {
         for (auto* p : params) {
             p->grad = 0.0;
         }
