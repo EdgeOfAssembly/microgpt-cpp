@@ -44,6 +44,9 @@ int main() {
     std::cout << "\nTraining..." << std::endl;
 
     for (int step = 0; step < num_steps; ++step) {
+        // Create storage for this training step
+        ValueStorage storage;
+        
         // Sample a document
         const std::string& doc = docs[step % docs.size()];
         auto tokens = tokenizer.encode(doc);
@@ -58,21 +61,21 @@ int main() {
             int token_id = tokens[pos_id];
             int target_id = tokens[pos_id + 1];
 
-            auto logits = model.forward(token_id, pos_id, keys, values);
-            auto probs = softmax(logits);
-            Value loss_t = -(probs[target_id].log());
+            auto logits = model.forward(token_id, pos_id, keys, values, storage);
+            auto probs = softmax(logits, storage);
+            Value loss_t = *storage.store(-(probs[target_id].log()));
             losses.push_back(loss_t);
         }
 
         // Average loss
-        Value loss(0.0);
+        Value* loss = storage.store(Value(0.0));
         for (const auto& l : losses) {
-            loss = loss + l;
+            loss = storage.store(*loss + l);
         }
-        loss = loss / static_cast<double>(n);
+        loss = storage.store(*loss / static_cast<double>(n));
 
         // Backward pass
-        loss.backward();
+        loss->backward();
 
         // Optimizer step
         optimizer.step(params, num_steps);
@@ -80,7 +83,7 @@ int main() {
         // Print progress
         if ((step + 1) % 10 == 0 || step == 0) {
             std::cout << "step " << std::setw(4) << (step + 1) << " / " << std::setw(4) << num_steps
-                      << " | loss " << std::fixed << std::setprecision(4) << loss.data << std::endl;
+                      << " | loss " << std::fixed << std::setprecision(4) << loss->data << std::endl;
         }
     }
 

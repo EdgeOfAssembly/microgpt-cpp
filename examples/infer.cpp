@@ -1,6 +1,7 @@
 #include <microgpt/microgpt.h>
 #include <fstream>
 #include <iostream>
+#include <iomanip>
 
 using namespace microgpt;
 

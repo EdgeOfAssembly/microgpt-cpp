@@ -1,0 +1,63 @@
+Loading dataset...
+num docs: 32033
+vocab size: 27
+Initializing model...
+num params: 4064
+
+Training...
+step    1 /  500 | loss 3.3207
+step   10 /  500 | loss 3.2956
+step   20 /  500 | loss 3.2916
+step   30 /  500 | loss 3.2757
+step   40 /  500 | loss 3.3126
+step   50 /  500 | loss 3.2482
+step   60 /  500 | loss 3.2635
+step   70 /  500 | loss 3.2739
+step   80 /  500 | loss 3.2453
+step   90 /  500 | loss 3.3166
+step  100 /  500 | loss 3.3158
+step  110 /  500 | loss 3.2637
+step  120 /  500 | loss 3.3060
+step  130 /  500 | loss 3.2670
+step  140 /  500 | loss 3.2631
+step  150 /  500 | loss 3.3490
+step  160 /  500 | loss 3.2856
+step  170 /  500 | loss 3.2973
+step  180 /  500 | loss 3.2600
+step  190 /  500 | loss 3.3175
+step  200 /  500 | loss 3.3414
+step  210 /  500 | loss 3.3407
+step  220 /  500 | loss 3.3071
+step  230 /  500 | loss 3.2710
+step  240 /  500 | loss 3.3103
+step  250 /  500 | loss 3.2964
+step  260 /  500 | loss 3.2815
+step  270 /  500 | loss 3.3002
+step  280 /  500 | loss 3.3195
+step  290 /  500 | loss 3.2615
+step  300 /  500 | loss 3.2987
+step  310 /  500 | loss 3.3925
+step  320 /  500 | loss 3.2517
+step  330 /  500 | loss 3.3091
+step  340 /  500 | loss 3.3002
+step  350 /  500 | loss 3.2934
+step  360 /  500 | loss 3.3502
+step  370 /  500 | loss 3.2657
+step  380 /  500 | loss 3.3137
+step  390 /  500 | loss 3.3193
+step  400 /  500 | loss 3.2721
+step  410 /  500 | loss 3.2813
+step  420 /  500 | loss 3.3343
+step  430 /  500 | loss 3.3283
+step  440 /  500 | loss 3.2490
+step  450 /  500 | loss 3.3282
+step  460 /  500 | loss 3.2694
+step  470 /  500 | loss 3.3337
+step  480 /  500 | loss 3.3021
+step  490 /  500 | loss 3.2350
+step  500 /  500 | loss 3.2772
+
+Saving model weights...
+Model saved to model_weights.bin
+
+Training complete!

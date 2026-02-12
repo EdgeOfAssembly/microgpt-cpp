@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <deque>
 #include <memory>
 #include <set>
 #include <vector>
@@ -11,16 +12,19 @@ namespace microgpt {
 /**
  * Stores a single scalar value and its gradient, as a node in a computation graph.
  * Direct port of Python's Value class for scalar autograd.
+ * 
+ * IMPORTANT: All Value objects must outlive any backward() calls on values that depend on them.
+ * The recommended pattern is to store all intermediate computation results in vectors.
  */
 class Value {
 public:
     double data;  // scalar value calculated during forward pass
     double grad;  // derivative of loss w.r.t. this node, calculated in backward pass
 
-    Value(double data = 0.0) : data(data), grad(0.0) {}
+    Value(double data = 0.0) : data(data), grad(0.0), children_(), local_grads_() {}
 
     Value(double data, std::vector<Value*> children, std::vector<double> local_grads)
-        : data(data), grad(0.0), children_(children), local_grads_(local_grads) {}
+        : data(data), grad(0.0), children_(std::move(children)), local_grads_(std::move(local_grads)) {}
 
     // Addition
     Value operator+(const Value& other) const {
@@ -28,8 +32,7 @@ public:
     }
 
     Value operator+(double other) const {
-        auto other_val = new Value(other);
-        return Value(data + other, {const_cast<Value*>(this), other_val}, {1.0, 1.0});
+        return Value(data + other, {const_cast<Value*>(this)}, {1.0});
     }
 
     friend Value operator+(double lhs, const Value& rhs) {
@@ -43,8 +46,7 @@ public:
     }
 
     Value operator*(double other) const {
-        auto other_val = new Value(other);
-        return Value(data * other, {const_cast<Value*>(this), other_val}, {other, data});
+        return Value(data * other, {const_cast<Value*>(this)}, {other});
     }
 
     friend Value operator*(double lhs, const Value& rhs) {
@@ -76,7 +78,7 @@ public:
     }
 
     Value operator/(double other) const {
-        return (*this) * std::pow(other, -1);
+        return (*this) * (1.0 / other);
     }
 
     friend Value operator/(double lhs, const Value& rhs) {
@@ -126,6 +128,24 @@ private:
             }
             topo.push_back(v);
         }
+    }
+};
+
+/**
+ * Helper to store intermediate Value computation nodes
+ * Use this to ensure all Values in a computation stay alive for backward pass
+ */
+class ValueStorage {
+public:
+    std::deque<Value> values;  // deque ensures pointers remain valid when growing
+    
+    Value* store(Value&& v) {
+        values.push_back(std::move(v));
+        return &values.back();
+    }
+    
+    void clear() {
+        values.clear();
     }
 };
 

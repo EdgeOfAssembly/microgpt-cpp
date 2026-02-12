@@ -83,7 +83,7 @@ inline std::vector<std::string> load_docs(const std::string& filename) {
 /**
  * Softmax function for Value vectors
  */
-inline std::vector<Value> softmax(const std::vector<Value>& logits) {
+inline std::vector<Value> softmax(const std::vector<Value>& logits, ValueStorage& storage) {
     // Find max value for numerical stability
     double max_val = logits[0].data;
     for (const auto& val : logits) {
@@ -93,20 +93,22 @@ inline std::vector<Value> softmax(const std::vector<Value>& logits) {
     }
 
     // Compute exp(x - max) and sum
-    std::vector<Value> exps;
+    std::vector<Value*> exps;
     exps.reserve(logits.size());
-    Value total(0.0);
+    Value* total = storage.store(Value(0.0));
+    
     for (const auto& val : logits) {
-        Value exp_val = (val - max_val).exp();
+        Value* exp_val = storage.store(val - max_val);
+        exp_val = storage.store(exp_val->exp());
         exps.push_back(exp_val);
-        total = total + exp_val;
+        total = storage.store(*total + *exp_val);
     }
 
     // Normalize
     std::vector<Value> probs;
     probs.reserve(exps.size());
-    for (auto& e : exps) {
-        probs.push_back(e / total);
+    for (auto* e : exps) {
+        probs.push_back(*storage.store(*e / *total));
     }
     return probs;
 }
@@ -114,18 +116,19 @@ inline std::vector<Value> softmax(const std::vector<Value>& logits) {
 /**
  * RMS normalization
  */
-inline std::vector<Value> rmsnorm(const std::vector<Value>& x) {
-    Value ms(0.0);
+inline std::vector<Value> rmsnorm(const std::vector<Value>& x, ValueStorage& storage) {
+    Value* ms = storage.store(Value(0.0));
     for (const auto& xi : x) {
-        ms = ms + (xi * xi);
+        Value* sq = storage.store(xi * xi);
+        ms = storage.store(*ms + *sq);
     }
-    ms = ms / static_cast<double>(x.size());
-    Value scale = (ms + 1e-5).pow(-0.5);
+    ms = storage.store(*ms / static_cast<double>(x.size()));
+    Value* scale = storage.store((*ms + 1e-5).pow(-0.5));
 
     std::vector<Value> result;
     result.reserve(x.size());
     for (const auto& xi : x) {
-        result.push_back(xi * scale);
+        result.push_back(*storage.store(xi * *scale));
     }
     return result;
 }
@@ -134,15 +137,17 @@ inline std::vector<Value> rmsnorm(const std::vector<Value>& x) {
  * Linear layer (matrix-vector multiplication)
  */
 inline std::vector<Value> linear(const std::vector<Value>& x,
-                                  const std::vector<std::vector<Value>>& w) {
+                                  const std::vector<std::vector<Value>>& w,
+                                  ValueStorage& storage) {
     std::vector<Value> result;
     result.reserve(w.size());
     for (const auto& wo : w) {
-        Value sum(0.0);
+        Value* sum = storage.store(Value(0.0));
         for (size_t i = 0; i < x.size(); ++i) {
-            sum = sum + (wo[i] * x[i]);
+            Value* prod = storage.store(wo[i] * x[i]);
+            sum = storage.store(*sum + *prod);
         }
-        result.push_back(sum);
+        result.push_back(*sum);
     }
     return result;
 }

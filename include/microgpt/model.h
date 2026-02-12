@@ -96,11 +96,13 @@ public:
      * @param pos_id Position ID
      * @param keys KV cache for keys
      * @param values KV cache for values
+     * @param storage Value storage for intermediate computations
      * @return logits over vocabulary
      */
     std::vector<Value> forward(int token_id, int pos_id,
                                 std::vector<std::vector<std::vector<Value>>>& keys,
-                                std::vector<std::vector<std::vector<Value>>>& values) {
+                                std::vector<std::vector<std::vector<Value>>>& values,
+                                ValueStorage& storage) {
         int head_dim = config.n_embd / config.n_head;
 
         // Token and position embeddings
@@ -111,9 +113,9 @@ public:
         std::vector<Value> x;
         x.reserve(config.n_embd);
         for (int i = 0; i < config.n_embd; ++i) {
-            x.push_back(tok_emb[i] + pos_emb[i]);
+            x.push_back(*storage.store(tok_emb[i] + pos_emb[i]));
         }
-        x = rmsnorm(x);
+        x = rmsnorm(x, storage);
 
         // Transformer layers
         for (int li = 0; li < config.n_layer; ++li) {
@@ -121,11 +123,11 @@ public:
 
             // 1) Multi-head attention
             auto x_residual = x;
-            x = rmsnorm(x);
+            x = rmsnorm(x, storage);
 
-            auto q = linear(x, state_dict.weights[prefix + "attn_wq"]);
-            auto k = linear(x, state_dict.weights[prefix + "attn_wk"]);
-            auto v = linear(x, state_dict.weights[prefix + "attn_wv"]);
+            auto q = linear(x, state_dict.weights[prefix + "attn_wq"], storage);
+            auto k = linear(x, state_dict.weights[prefix + "attn_wk"], storage);
+            auto v = linear(x, state_dict.weights[prefix + "attn_wv"], storage);
 
             keys[li].push_back(k);
             values[li].push_back(v);
@@ -150,46 +152,49 @@ public:
                 std::vector<Value> attn_logits;
                 double scale = std::sqrt(static_cast<double>(head_dim));
                 for (size_t t = 0; t < k_h.size(); ++t) {
-                    Value score(0.0);
+                    Value* score = storage.store(Value(0.0));
                     for (int j = 0; j < head_dim; ++j) {
-                        score = score + (q_h[j] * k_h[t][j]);
+                        Value* prod = storage.store(q_h[j] * k_h[t][j]);
+                        score = storage.store(*score + *prod);
                     }
-                    attn_logits.push_back(score / scale);
+                    attn_logits.push_back(*storage.store(*score / scale));
                 }
 
                 // Softmax attention weights
-                auto attn_weights = softmax(attn_logits);
+                auto attn_weights = softmax(attn_logits, storage);
 
                 // Weighted sum of values
                 for (int j = 0; j < head_dim; ++j) {
-                    Value head_out(0.0);
+                    Value* head_out = storage.store(Value(0.0));
                     for (size_t t = 0; t < v_h.size(); ++t) {
-                        head_out = head_out + (attn_weights[t] * v_h[t][j]);
+                        Value* prod = storage.store(attn_weights[t] * v_h[t][j]);
+                        head_out = storage.store(*head_out + *prod);
                     }
-                    x_attn.push_back(head_out);
+                    x_attn.push_back(*head_out);
                 }
             }
 
-            x = linear(x_attn, state_dict.weights[prefix + "attn_wo"]);
+            x = linear(x_attn, state_dict.weights[prefix + "attn_wo"], storage);
             for (size_t i = 0; i < x.size(); ++i) {
-                x[i] = x[i] + x_residual[i];
+                x[i] = *storage.store(x[i] + x_residual[i]);
             }
 
             // 2) MLP block
             x_residual = x;
-            x = rmsnorm(x);
-            x = linear(x, state_dict.weights[prefix + "mlp_fc1"]);
+            x = rmsnorm(x, storage);
+            x = linear(x, state_dict.weights[prefix + "mlp_fc1"], storage);
             for (auto& xi : x) {
-                xi = xi.relu().pow(2);  // ReLU^2 activation
+                Value* relu_val = storage.store(xi.relu());
+                xi = *storage.store(relu_val->pow(2));  // ReLU^2 activation
             }
-            x = linear(x, state_dict.weights[prefix + "mlp_fc2"]);
+            x = linear(x, state_dict.weights[prefix + "mlp_fc2"], storage);
             for (size_t i = 0; i < x.size(); ++i) {
-                x[i] = x[i] + x_residual[i];
+                x[i] = *storage.store(x[i] + x_residual[i]);
             }
         }
 
         // Final projection to logits
-        auto logits = linear(x, state_dict.weights["lm_head"]);
+        auto logits = linear(x, state_dict.weights["lm_head"], storage);
         return logits;
     }
 
@@ -201,6 +206,7 @@ public:
      * @return Generated token IDs
      */
     std::vector<int> generate(int start_token, int max_length, double temperature = 1.0) {
+        ValueStorage storage;  // Local storage for generation
         std::vector<std::vector<std::vector<Value>>> keys(config.n_layer);
         std::vector<std::vector<std::vector<Value>>> values(config.n_layer);
 
@@ -208,15 +214,15 @@ public:
         int token_id = start_token;
 
         for (int pos_id = 0; pos_id < max_length && pos_id < config.block_size; ++pos_id) {
-            auto logits = forward(token_id, pos_id, keys, values);
+            auto logits = forward(token_id, pos_id, keys, values, storage);
 
             // Apply temperature
             std::vector<Value> scaled_logits;
             for (const auto& l : logits) {
-                scaled_logits.push_back(l / temperature);
+                scaled_logits.push_back(*storage.store(l / temperature));
             }
 
-            auto probs = softmax(scaled_logits);
+            auto probs = softmax(scaled_logits, storage);
 
             // Sample from probability distribution
             std::vector<double> probs_data;
