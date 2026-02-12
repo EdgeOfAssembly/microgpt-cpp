@@ -323,7 +323,6 @@ This C++ implementation is a faithful port with these minimal changes:
 
 This is an educational implementation using scalar autograd, optimized for readability and correctness — not speed. Performance is comparable to the Python baseline.
 
-High-performance tensor operations with SIMD/CUDA acceleration are planned for PR 3.
 
 ## License
 
