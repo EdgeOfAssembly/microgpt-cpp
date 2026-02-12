@@ -16,6 +16,9 @@ endif()
 # Include directories
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
+# Copy data files to build directory
+file(COPY ${CMAKE_SOURCE_DIR}/data DESTINATION ${CMAKE_BINARY_DIR})
+
 # Training example
 add_executable(train examples/train.cpp)
 target_include_directories(train PRIVATE ${CMAKE_SOURCE_DIR}/include)

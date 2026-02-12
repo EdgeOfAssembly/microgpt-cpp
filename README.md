@@ -12,29 +12,31 @@ This is a **line-by-line translation** from pure Python to modern C++20. No opti
 - **Character-level Tokenizer**: Simple encode/decode by character
 - **Training & Inference**: Train on small text datasets and generate samples
 
-## Requirements
+## Prerequisites
 
-- C++20 compatible compiler (GCC 10+, Clang 12+, MSVC 2019+)
-- CMake 3.20 or higher
-- No external dependencies
+- `binutils`
+- `g++` (must support C++20)
+- `git`
+- `cmake` (3.20 or higher)
+- `make` or optionally `ninja`
 
 ## Build Instructions
 
 ```bash
 # Clone the repository
-git clone https://github.com/EdgeOfAssembly/microgpt-cpp.git
+git clone git@github.com:EdgeOfAssembly/microgpt-cpp.git
 cd microgpt-cpp
 
-# Create build directory
-mkdir build && cd build
+# Default build with GNU Make
+cmake -B build && make -j$(nproc) -C build
 
-# Configure and build
-cmake ..
-make
+# Or optionally with Ninja
+cmake -B build -G Ninja && ninja -C build
 
-# Or on Windows with MSVC:
-cmake .. -G "Visual Studio 16 2019"
-cmake --build . --config Release
+# Run from build directory
+cd build
+./train
+./infer
 ```
 
 ## Usage
