@@ -19,14 +19,22 @@ include_directories(${CMAKE_SOURCE_DIR}/include)
 # Copy data files to build directory
 file(COPY ${CMAKE_SOURCE_DIR}/data DESTINATION ${CMAKE_BINARY_DIR})
 
-# Training example
+# Training example (original detailed version)
 add_executable(train examples/train.cpp)
 target_include_directories(train PRIVATE ${CMAKE_SOURCE_DIR}/include)
 
-# Inference example
+# Inference example (original detailed version)
 add_executable(infer examples/infer.cpp)
 target_include_directories(infer PRIVATE ${CMAKE_SOURCE_DIR}/include)
 
+# Simple training example (educational API)
+add_executable(train_simple examples/train_simple.cpp)
+target_include_directories(train_simple PRIVATE ${CMAKE_SOURCE_DIR}/include)
+
+# Simple inference example (educational API)
+add_executable(infer_simple examples/infer_simple.cpp)
+target_include_directories(infer_simple PRIVATE ${CMAKE_SOURCE_DIR}/include)
+
 # Install targets
 install(DIRECTORY include/microgpt DESTINATION include)
-install(TARGETS train infer DESTINATION bin)
+install(TARGETS train infer train_simple infer_simple DESTINATION bin)
