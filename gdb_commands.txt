@@ -1,0 +1,6 @@
+run
+bt full
+info locals
+print v
+print v->children_
+quit

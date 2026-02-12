@@ -9,21 +9,21 @@ Work is split into **3 sequential PRs**, each building on the previous.
 ## PR 1 — Direct Python-to-C++ Translation
 **Goal:** Faithful, working C++ port that mirrors the Python logic line-by-line.
 
-- [ ] Add original `microgpt.py` as reference
-- [ ] Basic `Tensor` class (contiguous float storage, shape, basic ops)
-- [ ] Scalar autograd `Value` class (direct port of Python's `Value`)
-- [ ] Port all layers: `RMSNorm`, `Linear`, `MultiHeadAttention`, `MLP`
-- [ ] Port `GPT` model class with `forward()` and `generate()`
-- [ ] Port `Adam` optimizer with bias correction
-- [ ] Port training loop (names.txt dataset)
-- [ ] Port inference / sampling
-- [ ] `examples/train.cpp` — train on names.txt, print loss
-- [ ] `examples/infer.cpp` — load weights, generate samples
-- [ ] `CMakeLists.txt` — basic build (no CUDA, no SIMD, no BLAS)
-- [ ] Verify output roughly matches Python on names dataset
-- [ ] Basic `README.md` with build and usage instructions
+- [x] Add original `microgpt.py` as reference
+- [x] Basic `Tensor` class (contiguous float storage, shape, basic ops)
+- [x] Scalar autograd `Value` class (direct port of Python's `Value`)
+- [x] Port all layers: `RMSNorm`, `Linear`, `MultiHeadAttention`, `MLP`
+- [x] Port `GPT` model class with `forward()` and `generate()`
+- [x] Port `Adam` optimizer with bias correction
+- [x] Port training loop (names.txt dataset)
+- [x] Port inference / sampling
+- [x] `examples/train.cpp` — train on names.txt, print loss
+- [x] `examples/infer.cpp` — load weights, generate samples
+- [x] `CMakeLists.txt` — basic build (no CUDA, no SIMD, no BLAS)
+- [x] Verify output roughly matches Python on names dataset
+- [x] Basic `README.md` with build and usage instructions
 
-**Status:** 🔲 Not started
+**Status:** ✅ Complete
 
 ---
 
