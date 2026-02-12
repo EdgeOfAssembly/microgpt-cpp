@@ -320,12 +320,9 @@ This C++ implementation is a faithful port with these minimal changes:
 
 ## Performance
 
-This is an **educational implementation** optimized for readability and correctness, not speed. Training 500 steps takes roughly:
+This is an educational implementation using scalar autograd, optimized for readability and correctness — not speed. Performance is comparable to the Python baseline.
 
-- Python baseline: ~30-60 seconds
-- C++ (this implementation): ~60-120 seconds
-
-Performance improvements (CUDA, SIMD, batching) will come in future PRs.
+High-performance tensor operations with SIMD/CUDA acceleration are planned for PR 3.
 
 ## License
 
