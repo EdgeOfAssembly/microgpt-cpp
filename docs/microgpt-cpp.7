@@ -26,7 +26,7 @@ for (int step = 0; step < num_steps; ++step) {
 .br
     auto tokens = tokenizer.encode(docs[step % docs.size()]);
 .br
-    double loss = model.train_step(tokens, optimizer, storage);
+    double loss = model.train_step(tokens, optimizer, storage, num_steps);
 .br
 }
 .br
@@ -77,9 +77,10 @@ Main model class with the following methods:
 .B GPT(const Config& config)
 Construct a new GPT model with the given configuration.
 .TP
-.B double train_step(const std::vector<int>& tokens, Adam& optimizer, ValueStorage& storage)
+.B double train_step(const std::vector<int>& tokens, Adam& optimizer, ValueStorage& storage, int total_steps)
 Perform one training step on a token sequence. Returns the loss value.
 The storage parameter should be a fresh ValueStorage instance for each step.
+The total_steps parameter is used for cosine learning rate decay scheduling.
 .TP
 .B std::vector<int> generate(int start_token, int max_length, double temperature = 1.0)
 Generate a sequence autoregressively starting from start_token. The temperature
@@ -190,7 +191,7 @@ int main() {
             docs[step % docs.size()]
         );
         
-        double loss = model.train_step(tokens, optimizer, storage);
+        double loss = model.train_step(tokens, optimizer, storage, num_steps);
         
         if ((step + 1) % 10 == 0) {
             std::cout << "step " << (step + 1) 
@@ -271,7 +272,7 @@ int main() {
         const std::string& doc = docs[step % docs.size()];
         const auto tokens = tokenizer.encode(doc);
         
-        double loss = model.train_step(tokens, optimizer, storage);
+        double loss = model.train_step(tokens, optimizer, storage, num_steps);
         
         if ((step + 1) % 100 == 0) {
             std::cout << "step " << (step + 1) << "/" << num_steps

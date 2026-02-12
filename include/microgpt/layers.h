@@ -23,14 +23,14 @@ inline std::vector<Value*> rmsnorm(const std::vector<Value*>& x, ValueStorage& s
     assert(!x.empty() && "RMSNorm called with empty input");
     
     // Check for null pointers and validate data
-    for (const auto* xi : x) {
+    for (auto* xi : x) {
         assert(xi != nullptr && "Null pointer in rmsnorm input");
         assert(std::isfinite(xi->data) && "NaN or infinity in rmsnorm input");
     }
     
     Value* ms = storage.constant(0.0);
-    for (const auto* xi : x) {
-        Value* sq = storage.mul(const_cast<Value*>(xi), const_cast<Value*>(xi));
+    for (auto* xi : x) {
+        Value* sq = storage.mul(xi, xi);
         ms = storage.add(ms, sq);
     }
     
@@ -58,8 +58,8 @@ inline std::vector<Value*> rmsnorm(const std::vector<Value*>& x, ValueStorage& s
 
     std::vector<Value*> result;
     result.reserve(x.size());
-    for (const auto* xi : x) {
-        result.push_back(storage.mul(const_cast<Value*>(xi), scale));
+    for (auto* xi : x) {
+        result.push_back(storage.mul(xi, scale));
     }
     return result;
 }
@@ -70,7 +70,7 @@ inline std::vector<Value*> rmsnorm(const std::vector<Value*>& x, ValueStorage& s
  * Uses storage factory methods to eliminate stack temporaries
  */
 inline std::vector<Value*> linear(const std::vector<Value*>& x,
-                                   const std::vector<std::vector<Value>>& w,
+                                   std::vector<std::vector<Value>>& w,
                                    ValueStorage& storage) {
     assert(!x.empty() && "Linear called with empty input");
     assert(!w.empty() && "Linear called with empty weight matrix");
@@ -91,13 +91,13 @@ inline std::vector<Value*> linear(const std::vector<Value*>& x,
     std::vector<Value*> result;
     result.reserve(w.size());
     
-    for (const auto& wo : w) {
+    for (auto& wo : w) {
         Value* sum = storage.constant(0.0);
         for (size_t i = 0; i < x.size(); ++i) {
             // Validate weight
             assert(std::isfinite(wo[i].data) && "NaN or infinity in weight matrix");
             
-            Value* prod = storage.mul(const_cast<Value*>(&wo[i]), x[i]);
+            Value* prod = storage.mul(&wo[i], x[i]);
             sum = storage.add(sum, prod);
         }
         

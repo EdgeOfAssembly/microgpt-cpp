@@ -44,8 +44,8 @@ cmake -B build -G Ninja && ninja -C build
 
 # Run from build directory
 cd build
-./train
-./infer
+./train_simple
+./infer_simple
 ```
 
 ## Usage
@@ -78,7 +78,7 @@ int main() {
     for (int step = 0; step < 500; ++step) {
         ValueStorage storage;  // Fresh storage each step
         const auto tokens = tokenizer.encode(docs[step % docs.size()]);
-        double loss = model.train_step(tokens, optimizer, storage);
+        double loss = model.train_step(tokens, optimizer, storage, 500);
         if ((step + 1) % 10 == 0) {
             std::cout << "step " << (step + 1) << " | loss " << loss << std::endl;
         }
@@ -209,9 +209,10 @@ GPT(const Config& config);  // Initialize model with given config
 
 **Training:**
 ```cpp
-double train_step(const std::vector<int>& tokens, Adam& optimizer, ValueStorage& storage);
+double train_step(const std::vector<int>& tokens, Adam& optimizer, ValueStorage& storage, int total_steps);
 // Performs one training step on a sequence
 // Returns the loss value
+// total_steps is used for cosine learning rate decay
 ```
 
 **Inference:**

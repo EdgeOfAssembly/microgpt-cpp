@@ -55,7 +55,7 @@ int main() {
         const auto tokens = tokenizer.encode(doc);
         
         // Training step
-        double loss = model.train_step(tokens, optimizer, storage);
+        double loss = model.train_step(tokens, optimizer, storage, num_steps);
         
         // Print progress
         if ((step + 1) % 10 == 0 || step == 0) {

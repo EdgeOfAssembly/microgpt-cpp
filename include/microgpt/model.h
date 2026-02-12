@@ -70,6 +70,20 @@ public:
         return params;
     }
 
+    std::vector<const Value*> get_all_params() const {
+        std::vector<const Value*> params;
+        for (const auto& [name, matrix] : weights) {
+            for (const auto& row : matrix) {
+                for (const auto& val : row) {
+                    const Value* ptr = &val;
+                    assert(ptr != nullptr && "Parameter pointer is null");
+                    params.push_back(ptr);
+                }
+            }
+        }
+        return params;
+    }
+
 private:
     template <typename Dist, typename RNG>
     std::vector<std::vector<Value>> create_matrix(int nout, int nin, Dist& dist, RNG& rng) {
@@ -122,7 +136,7 @@ public:
         outfile.write(reinterpret_cast<const char*>(&tokenizer.BOS), sizeof(int));
 
         // Write parameters
-        auto params = const_cast<StateDict&>(state_dict).get_all_params();
+        auto params = state_dict.get_all_params();
         for (const auto* p : params) {
             outfile.write(reinterpret_cast<const char*>(&p->data), sizeof(double));
         }
@@ -143,12 +157,16 @@ public:
         }
 
         // Read config
-        Config config;
+        Config config{};
         infile.read(reinterpret_cast<char*>(&config.vocab_size), sizeof(int));
         infile.read(reinterpret_cast<char*>(&config.n_embd), sizeof(int));
         infile.read(reinterpret_cast<char*>(&config.n_head), sizeof(int));
         infile.read(reinterpret_cast<char*>(&config.n_layer), sizeof(int));
         infile.read(reinterpret_cast<char*>(&config.block_size), sizeof(int));
+        
+        if (!infile) {
+            throw std::runtime_error("Failed to read config from file");
+        }
 
         // Validate config
         if (config.vocab_size <= 0 || config.n_embd <= 0 || config.n_head <= 0 ||
@@ -163,13 +181,30 @@ public:
         Tokenizer tokenizer;
         int uchars_size = 0;
         infile.read(reinterpret_cast<char*>(&uchars_size), sizeof(int));
+        if (!infile) {
+            throw std::runtime_error("Failed to read tokenizer size from file");
+        }
         if (uchars_size <= 0 || uchars_size > 10000) {
             throw std::runtime_error("Invalid tokenizer size in file");
         }
         tokenizer.uchars.resize(uchars_size);
         infile.read(reinterpret_cast<char*>(tokenizer.uchars.data()), uchars_size);
+        if (!infile) {
+            throw std::runtime_error("Failed to read tokenizer characters from file");
+        }
         infile.read(reinterpret_cast<char*>(&tokenizer.BOS), sizeof(int));
+        if (!infile) {
+            throw std::runtime_error("Failed to read tokenizer BOS from file");
+        }
         tokenizer.vocab_size = config.vocab_size;
+        
+        // Validate tokenizer consistency
+        if (tokenizer.BOS != uchars_size) {
+            throw std::runtime_error("Inconsistent tokenizer BOS index in file");
+        }
+        if (config.vocab_size != uchars_size + 1) {
+            throw std::runtime_error("Incompatible vocab_size between config and tokenizer");
+        }
 
         // Initialize model
         GPT model(config);
@@ -194,7 +229,7 @@ public:
      * Single training step on a sequence
      * Returns the loss value
      */
-    double train_step(const std::vector<int>& tokens, Adam& optimizer, ValueStorage& storage) {
+    double train_step(const std::vector<int>& tokens, Adam& optimizer, ValueStorage& storage, int total_steps) {
         const int n = std::min(config.block_size, static_cast<int>(tokens.size()) - 1);
         if (n <= 0) {
             return 0.0;  // Skip empty sequences
@@ -231,7 +266,7 @@ public:
 
         // Optimizer step
         auto params = state_dict.get_all_params();
-        optimizer.step(params, 1);
+        optimizer.step(params, total_steps);
 
         return loss->data;
     }
