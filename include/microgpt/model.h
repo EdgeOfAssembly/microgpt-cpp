@@ -1,11 +1,18 @@
 #pragma once
 
+/**
+ * GPT model implementation - based on Andrej Karpathy's microGPT
+ * Original Python implementation: https://gist.github.com/karpathy/8627fe009c40f57531cb18360106ce95
+ */
+
 #include "utils.h"
 #include "value.h"
+#include "optimizer.h"
 #include <map>
 #include <random>
 #include <string>
 #include <vector>
+#include <fstream>
 
 namespace microgpt {
 
@@ -63,6 +70,20 @@ public:
         return params;
     }
 
+    std::vector<const Value*> get_all_params() const {
+        std::vector<const Value*> params;
+        for (const auto& [name, matrix] : weights) {
+            for (const auto& row : matrix) {
+                for (const auto& val : row) {
+                    const Value* ptr = &val;
+                    assert(ptr != nullptr && "Parameter pointer is null");
+                    params.push_back(ptr);
+                }
+            }
+        }
+        return params;
+    }
+
 private:
     template <typename Dist, typename RNG>
     std::vector<std::vector<Value>> create_matrix(int nout, int nin, Dist& dist, RNG& rng) {
@@ -81,7 +102,7 @@ private:
 };
 
 /**
- * GPT model
+ * GPT model with simple educational API
  */
 class GPT {
 public:
@@ -90,6 +111,164 @@ public:
 
     GPT(const Config& cfg) : config(cfg) {
         state_dict.init(config);
+    }
+
+    /**
+     * Save model weights and config to binary file
+     */
+    void save_weights(const std::string& filename, const Tokenizer& tokenizer) const {
+        std::ofstream outfile(filename, std::ios::binary);
+        if (!outfile.is_open()) {
+            throw std::runtime_error("Could not open file for writing: " + filename);
+        }
+
+        // Write config
+        outfile.write(reinterpret_cast<const char*>(&config.vocab_size), sizeof(int));
+        outfile.write(reinterpret_cast<const char*>(&config.n_embd), sizeof(int));
+        outfile.write(reinterpret_cast<const char*>(&config.n_head), sizeof(int));
+        outfile.write(reinterpret_cast<const char*>(&config.n_layer), sizeof(int));
+        outfile.write(reinterpret_cast<const char*>(&config.block_size), sizeof(int));
+
+        // Write tokenizer
+        int uchars_size = static_cast<int>(tokenizer.uchars.size());
+        outfile.write(reinterpret_cast<const char*>(&uchars_size), sizeof(int));
+        outfile.write(reinterpret_cast<const char*>(tokenizer.uchars.data()), uchars_size);
+        outfile.write(reinterpret_cast<const char*>(&tokenizer.BOS), sizeof(int));
+
+        // Write parameters
+        auto params = state_dict.get_all_params();
+        for (const auto* p : params) {
+            outfile.write(reinterpret_cast<const char*>(&p->data), sizeof(double));
+        }
+
+        if (!outfile) {
+            throw std::runtime_error("Error writing to file: " + filename);
+        }
+    }
+
+    /**
+     * Load model weights and config from binary file
+     * Returns the loaded model and tokenizer
+     */
+    static std::pair<GPT, Tokenizer> load_weights(const std::string& filename) {
+        std::ifstream infile(filename, std::ios::binary);
+        if (!infile.is_open()) {
+            throw std::runtime_error("Could not open file for reading: " + filename);
+        }
+
+        // Read config
+        Config config{};
+        infile.read(reinterpret_cast<char*>(&config.vocab_size), sizeof(int));
+        infile.read(reinterpret_cast<char*>(&config.n_embd), sizeof(int));
+        infile.read(reinterpret_cast<char*>(&config.n_head), sizeof(int));
+        infile.read(reinterpret_cast<char*>(&config.n_layer), sizeof(int));
+        infile.read(reinterpret_cast<char*>(&config.block_size), sizeof(int));
+        
+        if (!infile) {
+            throw std::runtime_error("Failed to read config from file");
+        }
+
+        // Validate config
+        if (config.vocab_size <= 0 || config.n_embd <= 0 || config.n_head <= 0 ||
+            config.n_layer <= 0 || config.block_size <= 0) {
+            throw std::runtime_error("Invalid config in file");
+        }
+        if (config.n_embd % config.n_head != 0) {
+            throw std::runtime_error("n_embd must be divisible by n_head");
+        }
+
+        // Read tokenizer
+        Tokenizer tokenizer;
+        int uchars_size = 0;
+        infile.read(reinterpret_cast<char*>(&uchars_size), sizeof(int));
+        if (!infile) {
+            throw std::runtime_error("Failed to read tokenizer size from file");
+        }
+        if (uchars_size <= 0 || uchars_size > 10000) {
+            throw std::runtime_error("Invalid tokenizer size in file");
+        }
+        tokenizer.uchars.resize(uchars_size);
+        infile.read(reinterpret_cast<char*>(tokenizer.uchars.data()), uchars_size);
+        if (!infile) {
+            throw std::runtime_error("Failed to read tokenizer characters from file");
+        }
+        infile.read(reinterpret_cast<char*>(&tokenizer.BOS), sizeof(int));
+        if (!infile) {
+            throw std::runtime_error("Failed to read tokenizer BOS from file");
+        }
+        tokenizer.vocab_size = config.vocab_size;
+        
+        // Validate tokenizer consistency
+        if (tokenizer.BOS != uchars_size) {
+            throw std::runtime_error("Inconsistent tokenizer BOS index in file");
+        }
+        if (config.vocab_size != uchars_size + 1) {
+            throw std::runtime_error("Incompatible vocab_size between config and tokenizer");
+        }
+
+        // Initialize model
+        GPT model(config);
+        auto params = model.state_dict.get_all_params();
+
+        // Load parameters
+        for (auto* p : params) {
+            infile.read(reinterpret_cast<char*>(&p->data), sizeof(double));
+            if (!std::isfinite(p->data)) {
+                throw std::runtime_error("Loaded parameter with NaN or infinity");
+            }
+        }
+
+        if (!infile) {
+            throw std::runtime_error("Failed to read all parameters from file");
+        }
+
+        return {model, tokenizer};
+    }
+
+    /**
+     * Single training step on a sequence
+     * Returns the loss value
+     */
+    double train_step(const std::vector<int>& tokens, Adam& optimizer, ValueStorage& storage, int total_steps) {
+        const int n = std::min(config.block_size, static_cast<int>(tokens.size()) - 1);
+        if (n <= 0) {
+            return 0.0;  // Skip empty sequences
+        }
+
+        // Forward pass
+        std::vector<std::vector<std::vector<Value*>>> keys(config.n_layer);
+        std::vector<std::vector<std::vector<Value*>>> values(config.n_layer);
+        std::vector<Value*> losses;
+        losses.reserve(n);
+
+        for (int pos_id = 0; pos_id < n; ++pos_id) {
+            const int token_id = tokens[pos_id];
+            const int target_id = tokens[pos_id + 1];
+
+            auto logits = forward(token_id, pos_id, keys, values, storage);
+            auto probs = softmax(logits, storage);
+
+            Value* log_prob = storage.log(probs[target_id]);
+            Value* loss_t = storage.neg(log_prob);
+            losses.push_back(loss_t);
+        }
+
+        // Average loss
+        Value* loss = storage.constant(0.0);
+        for (auto* l : losses) {
+            loss = storage.add(loss, l);
+        }
+        Value* n_val = storage.constant(static_cast<double>(n));
+        loss = storage.div(loss, n_val);
+
+        // Backward pass
+        loss->backward();
+
+        // Optimizer step
+        auto params = state_dict.get_all_params();
+        optimizer.step(params, total_steps);
+
+        return loss->data;
     }
 
     /**
