@@ -85,19 +85,19 @@ int main() {
             auto probs = softmax(logits, storage);
             
             std::cout << "    loss..." << std::endl;
-            Value* log_prob = storage.store(probs[target_id]->log());
-            Value* neg_log = storage.store(-*log_prob);
+            Value* log_prob = storage.log(probs[target_id]);
+            Value* neg_log = storage.neg(log_prob);
             losses.push_back(neg_log);
         }
 
         std::cout << "  averaging loss..." << std::endl;
-        Value* loss = storage.store(Value(0.0));
+        Value* loss = storage.constant(0.0);
         for (const auto* l : losses) {
-            loss = storage.store(*loss + *l);
+            loss = storage.add(loss, l);
         }
-        Value* n_val = storage.store(Value(static_cast<double>(n)));
-        Value* n_inv = storage.store(n_val->pow(-1));  // Store pow result
-        loss = storage.store(*loss * *n_inv);  // Use multiplication instead of division
+        Value* n_val = storage.constant(static_cast<double>(n));
+        Value* n_inv = storage.pow(n_val, -1);
+        loss = storage.mul(loss, n_inv);
 
         std::cout << "  backward..." << std::endl;
         loss->backward();

@@ -60,7 +60,7 @@ Loading dataset...
 num docs: 32033
 vocab size: 27
 Initializing model...
-num params: 1324
+num params: 4064
 Training...
 step    1 /  500 | loss 3.2943
 step   10 /  500 | loss 2.8571
@@ -88,7 +88,7 @@ Expected output:
 Loading model weights...
 Model loaded successfully!
 vocab size: 27
-num params: 1324
+num params: 4064
 
 --- inference ---
 sample  1: marley

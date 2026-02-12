@@ -2,6 +2,7 @@
 
 #include "value.h"
 #include <cmath>
+#include <numbers>
 #include <vector>
 
 namespace microgpt {
@@ -37,7 +38,7 @@ public:
         step_count++;
 
         // Cosine learning rate decay
-        const double lr_t = learning_rate * 0.5 * (1.0 + std::cos(M_PI * step_count / num_steps));
+        const double lr_t = learning_rate * 0.5 * (1.0 + std::cos(std::numbers::pi * step_count / num_steps));
 
         for (size_t i = 0; i < params.size(); ++i) {
             Value* p = params[i];

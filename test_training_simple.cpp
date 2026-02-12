@@ -25,13 +25,14 @@ int main() {
     
     // Simple forward pass
     ValueStorage storage;
-    std::vector<std::vector<std::vector<Value>>> keys(1);
-    std::vector<std::vector<std::vector<Value>>> values(1);
+    std::vector<std::vector<std::vector<Value*>>> keys(1);
+    std::vector<std::vector<std::vector<Value*>>> values(1);
     
     // Forward pass with tokens [0, 1]
     auto logits0 = model.forward(0, 0, keys, values, storage);
     auto probs0 = softmax(logits0, storage);
-    Value* loss0 = storage.store(-(probs0[1].log()));  // Target is token 1
+    Value* log_prob = storage.log(probs0[1]);
+    Value* loss0 = storage.neg(log_prob);  // Target is token 1
     
     std::cout << "\nForward pass done. Loss = " << loss0->data << std::endl;
     

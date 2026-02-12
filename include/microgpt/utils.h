@@ -92,7 +92,7 @@ inline std::vector<Value*> softmax(const std::vector<Value*>& logits, ValueStora
     
     // Find max value for numerical stability
     double max_val = logits[0]->data;
-    for (const auto* val : logits) {
+    for (auto* val : logits) {
         assert(val != nullptr && "Null pointer in logits");
         assert(std::isfinite(val->data) && "NaN or infinity in logits");
         if (val->data > max_val) {
@@ -108,9 +108,9 @@ inline std::vector<Value*> softmax(const std::vector<Value*>& logits, ValueStora
     exps.reserve(logits.size());
     Value* total = storage.constant(0.0);
     
-    for (const auto* val : logits) {
+    for (auto* val : logits) {
         // Use factory methods - no stack temporaries!
-        Value* diff = storage.sub(const_cast<Value*>(val), max_val_node);
+        Value* diff = storage.sub(val, max_val_node);
         Value* exp_val = storage.exp(diff);
         exps.push_back(exp_val);
         total = storage.add(total, exp_val);

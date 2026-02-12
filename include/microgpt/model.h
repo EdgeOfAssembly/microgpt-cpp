@@ -125,14 +125,14 @@ public:
         }
 
         // Token and position embeddings
-        const auto& tok_emb = state_dict.weights["wte"][token_id];
-        const auto& pos_emb = state_dict.weights["wpe"][pos_id];
+        auto& tok_emb = state_dict.weights["wte"][token_id];
+        auto& pos_emb = state_dict.weights["wpe"][pos_id];
 
         // Joint embedding - use factory methods
         std::vector<Value*> x;
         x.reserve(config.n_embd);
         for (int i = 0; i < config.n_embd; ++i) {
-            x.push_back(storage.add(const_cast<Value*>(&tok_emb[i]), const_cast<Value*>(&pos_emb[i])));
+            x.push_back(storage.add(&tok_emb[i], &pos_emb[i]));
         }
         x = rmsnorm(x, storage);
 
@@ -288,8 +288,8 @@ public:
             // Apply temperature using factory method
             std::vector<Value*> scaled_logits;
             scaled_logits.reserve(logits.size());
-            for (const auto* l : logits) {
-                scaled_logits.push_back(storage.div(const_cast<Value*>(l), temperature));
+            for (auto* l : logits) {
+                scaled_logits.push_back(storage.div(l, temperature));
             }
 
             auto probs = softmax(scaled_logits, storage);
