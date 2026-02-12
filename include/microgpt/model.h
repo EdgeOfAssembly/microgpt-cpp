@@ -128,11 +128,11 @@ public:
         const auto& tok_emb = state_dict.weights["wte"][token_id];
         const auto& pos_emb = state_dict.weights["wpe"][pos_id];
 
-        // Joint embedding - store in storage to avoid temporaries
+        // Joint embedding - use factory methods
         std::vector<Value*> x;
         x.reserve(config.n_embd);
         for (int i = 0; i < config.n_embd; ++i) {
-            x.push_back(storage.store(tok_emb[i] + pos_emb[i]));
+            x.push_back(storage.add(const_cast<Value*>(&tok_emb[i]), const_cast<Value*>(&pos_emb[i])));
         }
         x = rmsnorm(x, storage);
 
@@ -194,17 +194,17 @@ public:
                 }
                 
                 for (size_t t = 0; t < k_h.size(); ++t) {
-                    Value* score = storage.store(Value(0.0));
+                    Value* score = storage.constant(0.0);
                     for (int j = 0; j < head_dim; ++j) {
                         assert(q_h[j] != nullptr && "Null pointer in q_h");
                         assert(k_h[t][j] != nullptr && "Null pointer in k_h");
-                        Value* prod = storage.store(*q_h[j] * *k_h[t][j]);
-                        score = storage.store(*score + *prod);
+                        Value* prod = storage.mul(q_h[j], k_h[t][j]);
+                        score = storage.add(score, prod);
                     }
                     
-                    // Store division result to avoid temporaries
-                    Value* scale_val = storage.store(Value(scale));
-                    attn_logits.push_back(storage.store(*score / *scale_val));
+                    // Use factory method for division
+                    Value* scale_val = storage.constant(scale);
+                    attn_logits.push_back(storage.div(score, scale_val));
                 }
 
                 // Softmax attention weights
@@ -212,12 +212,12 @@ public:
 
                 // Weighted sum of values
                 for (int j = 0; j < head_dim; ++j) {
-                    Value* head_out = storage.store(Value(0.0));
+                    Value* head_out = storage.constant(0.0);
                     for (size_t t = 0; t < v_h.size(); ++t) {
                         assert(attn_weights[t] != nullptr && "Null pointer in attn_weights");
                         assert(v_h[t][j] != nullptr && "Null pointer in v_h");
-                        Value* prod = storage.store(*attn_weights[t] * *v_h[t][j]);
-                        head_out = storage.store(*head_out + *prod);
+                        Value* prod = storage.mul(attn_weights[t], v_h[t][j]);
+                        head_out = storage.add(head_out, prod);
                     }
                     x_attn.push_back(head_out);
                 }
@@ -231,7 +231,7 @@ public:
             }
             
             for (size_t i = 0; i < x.size(); ++i) {
-                x[i] = storage.store(*x[i] + *x_residual[i]);
+                x[i] = storage.add(x[i], x_residual[i]);
             }
 
             // 2) MLP block
@@ -240,9 +240,8 @@ public:
             x = linear(x, state_dict.weights[prefix + "mlp_fc1"], storage);
             for (auto*& xi : x) {
                 assert(xi != nullptr && "Null pointer in MLP activation");
-                Value* relu_val = storage.store(xi->relu());
-                Value* two = storage.store(Value(2.0));
-                xi = storage.store(relu_val->pow(two->data));  // ReLU^2 activation
+                Value* relu_val = storage.relu(xi);
+                xi = storage.pow(relu_val, 2.0);  // ReLU^2 activation
             }
             x = linear(x, state_dict.weights[prefix + "mlp_fc2"], storage);
             
@@ -252,7 +251,7 @@ public:
             }
             
             for (size_t i = 0; i < x.size(); ++i) {
-                x[i] = storage.store(*x[i] + *x_residual[i]);
+                x[i] = storage.add(x[i], x_residual[i]);
             }
         }
 
@@ -286,11 +285,11 @@ public:
         for (int pos_id = 0; pos_id < max_length && pos_id < config.block_size; ++pos_id) {
             auto logits = forward(token_id, pos_id, keys, values, storage);
 
-            // Apply temperature
+            // Apply temperature using factory method
             std::vector<Value*> scaled_logits;
             scaled_logits.reserve(logits.size());
             for (const auto* l : logits) {
-                scaled_logits.push_back(storage.store(*l / temperature));
+                scaled_logits.push_back(storage.div(const_cast<Value*>(l), temperature));
             }
 
             auto probs = softmax(scaled_logits, storage);

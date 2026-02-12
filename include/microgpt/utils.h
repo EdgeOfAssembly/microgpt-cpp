@@ -85,7 +85,7 @@ inline std::vector<std::string> load_docs(const std::string& filename) {
  * All intermediate values are stored to ensure proper gradient flow
  * Includes safety checks for numerical stability
  * 
- * CRITICAL: ALL temporary Values must be stored before being used in operations
+ * CRITICAL: Uses storage factory methods to eliminate stack temporaries
  */
 inline std::vector<Value*> softmax(const std::vector<Value*>& logits, ValueStorage& storage) {
     assert(!logits.empty() && "Softmax called with empty logits");
@@ -101,20 +101,19 @@ inline std::vector<Value*> softmax(const std::vector<Value*>& logits, ValueStora
     }
 
     // Store max_val as a Value so it can be part of the computation graph
-    Value* max_val_node = storage.store(Value(max_val));
+    Value* max_val_node = storage.constant(max_val);
 
     // Compute exp(x - max) and sum
     std::vector<Value*> exps;
     exps.reserve(logits.size());
-    Value* total = storage.store(Value(0.0));
+    Value* total = storage.constant(0.0);
     
     for (const auto* val : logits) {
-        // CRITICAL: Store negation BEFORE using it
-        Value* neg_max = storage.store(-*max_val_node);
-        Value* diff = storage.store(*val + *neg_max);
-        Value* exp_val = storage.store(diff->exp());
+        // Use factory methods - no stack temporaries!
+        Value* diff = storage.sub(const_cast<Value*>(val), max_val_node);
+        Value* exp_val = storage.exp(diff);
         exps.push_back(exp_val);
-        total = storage.store(*total + *exp_val);
+        total = storage.add(total, exp_val);
     }
 
     // Check for numerical issues
@@ -122,14 +121,14 @@ inline std::vector<Value*> softmax(const std::vector<Value*>& logits, ValueStora
         throw std::runtime_error("Softmax normalization term too small (numerical instability)");
     }
 
-    // Normalize - IMPORTANT: store pow result before using it
+    // Normalize - use factory methods
     std::vector<Value*> probs;
     probs.reserve(exps.size());
-    Value* total_inv = storage.store(total->pow(-1));  // Store intermediate!
+    Value* total_inv = storage.pow(total, -1.0);
     
     double prob_sum = 0.0;
     for (auto* e : exps) {
-        Value* prob = storage.store(*e * *total_inv);
+        Value* prob = storage.mul(e, total_inv);
         probs.push_back(prob);
         prob_sum += prob->data;
     }
@@ -143,6 +142,7 @@ inline std::vector<Value*> softmax(const std::vector<Value*>& logits, ValueStora
 /**
  * RMS normalization - returns pointers to avoid copying
  * Includes safety checks for division by zero
+ * Uses storage factory methods to eliminate stack temporaries
  */
 inline std::vector<Value*> rmsnorm(const std::vector<Value*>& x, ValueStorage& storage) {
     assert(!x.empty() && "RMSNorm called with empty input");
@@ -153,10 +153,10 @@ inline std::vector<Value*> rmsnorm(const std::vector<Value*>& x, ValueStorage& s
         assert(std::isfinite(xi->data) && "NaN or infinity in rmsnorm input");
     }
     
-    Value* ms = storage.store(Value(0.0));
+    Value* ms = storage.constant(0.0);
     for (const auto* xi : x) {
-        Value* sq = storage.store(*xi * *xi);
-        ms = storage.store(*ms + *sq);
+        Value* sq = storage.mul(const_cast<Value*>(xi), const_cast<Value*>(xi));
+        ms = storage.add(ms, sq);
     }
     
     // Check size to prevent overflow in static_cast
@@ -164,17 +164,17 @@ inline std::vector<Value*> rmsnorm(const std::vector<Value*>& x, ValueStorage& s
         throw std::overflow_error("Vector size too large for rmsnorm");
     }
     
-    Value* size_val = storage.store(Value(static_cast<double>(x.size())));
-    ms = storage.store(*ms / *size_val);
-    Value* eps_val = storage.store(Value(1e-5));
-    Value* ms_eps = storage.store(*ms + *eps_val);
+    Value* size_val = storage.constant(static_cast<double>(x.size()));
+    ms = storage.div(ms, size_val);
+    Value* eps_val = storage.constant(1e-5);
+    Value* ms_eps = storage.add(ms, eps_val);
     
     // Validate before pow
     if (ms_eps->data <= 0.0) {
         throw std::domain_error("RMSNorm: mean square + epsilon is non-positive");
     }
     
-    Value* scale = storage.store(ms_eps->pow(-0.5));
+    Value* scale = storage.pow(ms_eps, -0.5);
     
     // Check scale is reasonable
     if (!std::isfinite(scale->data) || std::abs(scale->data) > 1e10) {
@@ -184,7 +184,7 @@ inline std::vector<Value*> rmsnorm(const std::vector<Value*>& x, ValueStorage& s
     std::vector<Value*> result;
     result.reserve(x.size());
     for (const auto* xi : x) {
-        result.push_back(storage.store(*xi * *scale));
+        result.push_back(storage.mul(const_cast<Value*>(xi), scale));
     }
     return result;
 }
@@ -192,6 +192,7 @@ inline std::vector<Value*> rmsnorm(const std::vector<Value*>& x, ValueStorage& s
 /**
  * Linear layer (matrix-vector multiplication) - returns pointers to avoid copying
  * Includes bounds checking and overflow detection
+ * Uses storage factory methods to eliminate stack temporaries
  */
 inline std::vector<Value*> linear(const std::vector<Value*>& x,
                                    const std::vector<std::vector<Value>>& w,
@@ -216,13 +217,13 @@ inline std::vector<Value*> linear(const std::vector<Value*>& x,
     result.reserve(w.size());
     
     for (const auto& wo : w) {
-        Value* sum = storage.store(Value(0.0));
+        Value* sum = storage.constant(0.0);
         for (size_t i = 0; i < x.size(); ++i) {
             // Validate weight
             assert(std::isfinite(wo[i].data) && "NaN or infinity in weight matrix");
             
-            Value* prod = storage.store(wo[i] * *x[i]);
-            sum = storage.store(*sum + *prod);
+            Value* prod = storage.mul(const_cast<Value*>(&wo[i]), x[i]);
+            sum = storage.add(sum, prod);
         }
         
         // Check for numerical issues

@@ -41,7 +41,19 @@ public:
         }
     }
 
-    // Addition
+    // ========================================================================
+    // DEPRECATED: Direct operator overloads (create stack temporaries)
+    // DO NOT USE THESE DIRECTLY - Use ValueStorage factory methods instead!
+    // 
+    // These operators return Values by value, creating stack-allocated 
+    // temporaries that cause dangling pointer issues in computation graphs.
+    // 
+    // Instead of:  storage.store(*a + *b)
+    // Use:         storage.add(a, b)
+    // ========================================================================
+    
+    // Addition (DEPRECATED - use storage.add())
+    [[deprecated("Use ValueStorage::add() to avoid stack temporaries")]]
     Value operator+(const Value& other) const {
         // Check for overflow
         if (data > 0 && other.data > 0 && data > std::numeric_limits<double>::max() - other.data) {
@@ -53,16 +65,19 @@ public:
         return Value(data + other.data, {const_cast<Value*>(this), const_cast<Value*>(&other)}, {1.0, 1.0});
     }
 
+    [[deprecated("Use ValueStorage::add() to avoid stack temporaries")]]
     Value operator+(double other) const {
         assert(std::isfinite(other) && "Adding NaN or infinity");
         return Value(data + other, {const_cast<Value*>(this)}, {1.0});
     }
 
+    [[deprecated("Use ValueStorage::add() to avoid stack temporaries")]]
     friend Value operator+(double lhs, const Value& rhs) {
         return rhs + lhs;
     }
 
-    // Multiplication
+    // Multiplication (DEPRECATED - use storage.mul())
+    [[deprecated("Use ValueStorage::mul() to avoid stack temporaries")]]
     Value operator*(const Value& other) const {
         const double result = data * other.data;
         assert(std::isfinite(result) && "Multiplication resulted in NaN or infinity");
@@ -70,6 +85,7 @@ public:
                      {other.data, data});
     }
 
+    [[deprecated("Use ValueStorage::mul() to avoid stack temporaries")]]
     Value operator*(double other) const {
         assert(std::isfinite(other) && "Multiplying by NaN or infinity");
         const double result = data * other;
@@ -77,23 +93,28 @@ public:
         return Value(result, {const_cast<Value*>(this)}, {other});
     }
 
+    [[deprecated("Use ValueStorage::mul() to avoid stack temporaries")]]
     friend Value operator*(double lhs, const Value& rhs) {
         return rhs * lhs;
     }
 
-    // Negation
+    // Negation (DEPRECATED - use storage.neg())
+    [[deprecated("Use ValueStorage::neg() to avoid stack temporaries")]]
     Value operator-() const { return (*this) * -1.0; }
 
-    // Subtraction
+    // Subtraction (DEPRECATED - use storage.sub())
+    [[deprecated("Use ValueStorage::sub() to avoid stack temporaries")]]
     Value operator-(const Value& other) const { return (*this) + (-other); }
 
+    [[deprecated("Use ValueStorage::sub() to avoid stack temporaries")]]
     Value operator-(double other) const { return (*this) + (-other); }
 
+    [[deprecated("Use ValueStorage::sub() to avoid stack temporaries")]]
     friend Value operator-(double lhs, const Value& rhs) {
         return lhs + (-rhs);
     }
 
-    // Power
+    // Power (use storage.pow() instead)
     Value pow(double exponent) const {
         assert(std::isfinite(exponent) && "Power exponent is NaN or infinity");
         
@@ -114,7 +135,8 @@ public:
         return Value(result, {const_cast<Value*>(this)}, {local_grad});
     }
 
-    // Division
+    // Division (DEPRECATED - use storage.div())
+    [[deprecated("Use ValueStorage::div() to avoid stack temporaries")]]
     Value operator/(const Value& other) const {
         if (std::abs(other.data) < std::numeric_limits<double>::epsilon()) {
             throw std::domain_error("Division by zero or near-zero value");
@@ -122,6 +144,7 @@ public:
         return (*this) * other.pow(-1);
     }
 
+    [[deprecated("Use ValueStorage::div() to avoid stack temporaries")]]
     Value operator/(double other) const {
         if (std::abs(other) < std::numeric_limits<double>::epsilon()) {
             throw std::domain_error("Division by zero or near-zero value");
@@ -130,6 +153,7 @@ public:
         return (*this) * (1.0 / other);
     }
 
+    [[deprecated("Use ValueStorage::div() to avoid stack temporaries")]]
     friend Value operator/(double lhs, const Value& rhs) {
         return lhs * rhs.pow(-1);
     }
@@ -244,6 +268,24 @@ private:
 /**
  * Helper to store intermediate Value computation nodes with safety checks
  * Use this to ensure all Values in a computation stay alive for backward pass
+ * 
+ * IMPORTANT: Always use factory methods (add, mul, etc.) instead of operators!
+ * Factory methods ensure ALL Values are heap-allocated, preventing dangling pointers.
+ * 
+ * ✅ CORRECT:   storage.add(a, b)
+ * ❌ WRONG:     storage.store(*a + *b)  // Creates stack temporary!
+ * 
+ * Factory methods that automatically store results:
+ * - constant(double) - Create a constant Value
+ * - add(a, b) - Addition
+ * - sub(a, b) - Subtraction  
+ * - mul(a, b) - Multiplication
+ * - div(a, b) - Division
+ * - neg(a) - Negation
+ * - pow(a, exp) - Power
+ * - log(a) - Natural logarithm
+ * - exp(a) - Exponential
+ * - relu(a) - ReLU activation
  */
 class ValueStorage {
 public:
@@ -260,6 +302,136 @@ public:
         assert(ptr != nullptr && "Storage returned null pointer");
         
         return ptr;
+    }
+    
+    // Factory method: Create a constant Value
+    Value* constant(double data) {
+        return store(Value(data));
+    }
+    
+    // Factory method: Addition
+    Value* add(Value* a, Value* b) {
+        assert(a != nullptr && "Null pointer in add");
+        assert(b != nullptr && "Null pointer in add");
+        // Create Value directly without using operator overload
+        double result = a->data + b->data;
+        if (a->data > 0 && b->data > 0 && a->data > std::numeric_limits<double>::max() - b->data) {
+            throw std::overflow_error("Addition would overflow");
+        }
+        return store(Value(result, {a, b}, {1.0, 1.0}));
+    }
+    
+    Value* add(Value* a, double b) {
+        assert(a != nullptr && "Null pointer in add");
+        assert(std::isfinite(b) && "Adding NaN or infinity");
+        return store(Value(a->data + b, {a}, {1.0}));
+    }
+    
+    // Factory method: Multiplication
+    Value* mul(Value* a, Value* b) {
+        assert(a != nullptr && "Null pointer in mul");
+        assert(b != nullptr && "Null pointer in mul");
+        const double result = a->data * b->data;
+        assert(std::isfinite(result) && "Multiplication resulted in NaN or infinity");
+        return store(Value(result, {a, b}, {b->data, a->data}));
+    }
+    
+    Value* mul(Value* a, double b) {
+        assert(a != nullptr && "Null pointer in mul");
+        assert(std::isfinite(b) && "Multiplying by NaN or infinity");
+        const double result = a->data * b;
+        assert(std::isfinite(result) && "Multiplication resulted in NaN or infinity");
+        return store(Value(result, {a}, {b}));
+    }
+    
+    // Factory method: Negation
+    Value* neg(Value* a) {
+        assert(a != nullptr && "Null pointer in neg");
+        return mul(a, -1.0);
+    }
+    
+    // Factory method: Subtraction
+    Value* sub(Value* a, Value* b) {
+        assert(a != nullptr && "Null pointer in sub");
+        assert(b != nullptr && "Null pointer in sub");
+        Value* neg_b = neg(b);
+        return add(a, neg_b);
+    }
+    
+    Value* sub(Value* a, double b) {
+        assert(a != nullptr && "Null pointer in sub");
+        return add(a, -b);
+    }
+    
+    // Factory method: Power
+    Value* pow(Value* a, double exponent) {
+        assert(a != nullptr && "Null pointer in pow");
+        assert(std::isfinite(exponent) && "Power exponent is NaN or infinity");
+        
+        if (a->data < 0.0 && std::floor(exponent) != exponent) {
+            throw std::domain_error("Negative base with non-integer exponent");
+        }
+        if (a->data == 0.0 && exponent < 0.0) {
+            throw std::domain_error("Zero to negative power (division by zero)");
+        }
+        
+        const double result = std::pow(a->data, exponent);
+        assert(std::isfinite(result) && "Power resulted in NaN or infinity");
+        
+        const double local_grad = exponent * std::pow(a->data, exponent - 1);
+        assert(std::isfinite(local_grad) && "Power gradient is NaN or infinity");
+        
+        return store(Value(result, {a}, {local_grad}));
+    }
+    
+    // Factory method: Division
+    Value* div(Value* a, Value* b) {
+        assert(a != nullptr && "Null pointer in div");
+        assert(b != nullptr && "Null pointer in div");
+        if (std::abs(b->data) < std::numeric_limits<double>::epsilon()) {
+            throw std::domain_error("Division by zero or near-zero value");
+        }
+        Value* b_inv = pow(b, -1.0);
+        return mul(a, b_inv);
+    }
+    
+    Value* div(Value* a, double b) {
+        assert(a != nullptr && "Null pointer in div");
+        if (std::abs(b) < std::numeric_limits<double>::epsilon()) {
+            throw std::domain_error("Division by zero or near-zero value");
+        }
+        assert(std::isfinite(b) && "Dividing by NaN or infinity");
+        return mul(a, 1.0 / b);
+    }
+    
+    // Factory method: Logarithm
+    Value* log(Value* a) {
+        assert(a != nullptr && "Null pointer in log");
+        if (a->data <= 0.0) {
+            throw std::domain_error("Log of non-positive value");
+        }
+        const double result = std::log(a->data);
+        assert(std::isfinite(result) && "Log resulted in NaN or infinity");
+        return store(Value(result, {a}, {1.0 / a->data}));
+    }
+    
+    // Factory method: Exponential
+    Value* exp(Value* a) {
+        assert(a != nullptr && "Null pointer in exp");
+        if (a->data > 700.0) {
+            throw std::overflow_error("Exp would overflow");
+        }
+        const double result = std::exp(a->data);
+        assert(std::isfinite(result) && "Exp resulted in NaN or infinity");
+        return store(Value(result, {a}, {result}));
+    }
+    
+    // Factory method: ReLU
+    Value* relu(Value* a) {
+        assert(a != nullptr && "Null pointer in relu");
+        const double result = std::max(0.0, a->data);
+        const double local_grad = (a->data > 0) ? 1.0 : 0.0;
+        return store(Value(result, {a}, {local_grad}));
     }
     
     void clear() {

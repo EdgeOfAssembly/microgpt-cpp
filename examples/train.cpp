@@ -98,24 +98,25 @@ int main() {
             assert(static_cast<int>(probs.size()) == config.vocab_size && "Probability size mismatch");
             assert(probs[target_id] != nullptr && "Null probability pointer at target");
             
-            Value* loss_t = storage.store(-(probs[target_id]->log()));
+            Value* log_prob = storage.log(probs[target_id]);
+            Value* loss_t = storage.neg(log_prob);
             assert(loss_t != nullptr && "Null loss pointer");
             losses.push_back(loss_t);
         }
 
-        // Average loss
-        Value* loss = storage.store(Value(0.0));
+        // Average loss using factory methods
+        Value* loss = storage.constant(0.0);
         assert(loss != nullptr && "Null loss accumulator");
         
         for (const auto* l : losses) {
             assert(l != nullptr && "Null loss in losses vector");
-            loss = storage.store(*loss + *l);
+            loss = storage.add(loss, const_cast<Value*>(l));
             assert(loss != nullptr && "Null loss after accumulation");
         }
         
-        Value* n_val = storage.store(Value(static_cast<double>(n)));
+        Value* n_val = storage.constant(static_cast<double>(n));
         assert(n_val != nullptr && "Null n_val");
-        loss = storage.store(*loss / *n_val);
+        loss = storage.div(loss, n_val);
         assert(loss != nullptr && "Null loss after averaging");
 
         // Backward pass
