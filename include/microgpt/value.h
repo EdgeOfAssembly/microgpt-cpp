@@ -73,7 +73,19 @@ public:
 
     [[deprecated("Use ValueStorage::add() to avoid stack temporaries")]]
     friend Value operator+(double lhs, const Value& rhs) {
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#elif defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4996)
+#endif
         return rhs + lhs;
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#elif defined(_MSC_VER)
+#pragma warning(pop)
+#endif
     }
 
     // Multiplication (DEPRECATED - use storage.mul())
@@ -95,23 +107,89 @@ public:
 
     [[deprecated("Use ValueStorage::mul() to avoid stack temporaries")]]
     friend Value operator*(double lhs, const Value& rhs) {
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#elif defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4996)
+#endif
         return rhs * lhs;
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#elif defined(_MSC_VER)
+#pragma warning(pop)
+#endif
     }
 
     // Negation (DEPRECATED - use storage.neg())
     [[deprecated("Use ValueStorage::neg() to avoid stack temporaries")]]
-    Value operator-() const { return (*this) * -1.0; }
+    Value operator-() const {
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#elif defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4996)
+#endif
+        return (*this) * -1.0;
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#elif defined(_MSC_VER)
+#pragma warning(pop)
+#endif
+    }
 
     // Subtraction (DEPRECATED - use storage.sub())
     [[deprecated("Use ValueStorage::sub() to avoid stack temporaries")]]
-    Value operator-(const Value& other) const { return (*this) + (-other); }
+    Value operator-(const Value& other) const {
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#elif defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4996)
+#endif
+        return (*this) + (-other);
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#elif defined(_MSC_VER)
+#pragma warning(pop)
+#endif
+    }
 
     [[deprecated("Use ValueStorage::sub() to avoid stack temporaries")]]
-    Value operator-(double other) const { return (*this) + (-other); }
+    Value operator-(double other) const {
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#elif defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4996)
+#endif
+        return (*this) + (-other);
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#elif defined(_MSC_VER)
+#pragma warning(pop)
+#endif
+    }
 
     [[deprecated("Use ValueStorage::sub() to avoid stack temporaries")]]
     friend Value operator-(double lhs, const Value& rhs) {
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#elif defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4996)
+#endif
         return lhs + (-rhs);
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#elif defined(_MSC_VER)
+#pragma warning(pop)
+#endif
     }
 
     // Power (use storage.pow() instead)
@@ -141,7 +219,19 @@ public:
         if (std::abs(other.data) < std::numeric_limits<double>::epsilon()) {
             throw std::domain_error("Division by zero or near-zero value");
         }
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#elif defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4996)
+#endif
         return (*this) * other.pow(-1);
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#elif defined(_MSC_VER)
+#pragma warning(pop)
+#endif
     }
 
     [[deprecated("Use ValueStorage::div() to avoid stack temporaries")]]
@@ -150,12 +240,36 @@ public:
             throw std::domain_error("Division by zero or near-zero value");
         }
         assert(std::isfinite(other) && "Dividing by NaN or infinity");
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#elif defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4996)
+#endif
         return (*this) * (1.0 / other);
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#elif defined(_MSC_VER)
+#pragma warning(pop)
+#endif
     }
 
     [[deprecated("Use ValueStorage::div() to avoid stack temporaries")]]
     friend Value operator/(double lhs, const Value& rhs) {
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#elif defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4996)
+#endif
         return lhs * rhs.pow(-1);
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#elif defined(_MSC_VER)
+#pragma warning(pop)
+#endif
     }
 
     // Mathematical functions
