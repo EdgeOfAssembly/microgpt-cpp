@@ -84,6 +84,8 @@ inline std::vector<std::string> load_docs(const std::string& filename) {
  * Softmax function for Value vectors - returns pointers to avoid copying
  * All intermediate values are stored to ensure proper gradient flow
  * Includes safety checks for numerical stability
+ * 
+ * CRITICAL: ALL temporary Values must be stored before being used in operations
  */
 inline std::vector<Value*> softmax(const std::vector<Value*>& logits, ValueStorage& storage) {
     assert(!logits.empty() && "Softmax called with empty logits");
@@ -107,7 +109,9 @@ inline std::vector<Value*> softmax(const std::vector<Value*>& logits, ValueStora
     Value* total = storage.store(Value(0.0));
     
     for (const auto* val : logits) {
-        Value* diff = storage.store(*val - *max_val_node);
+        // CRITICAL: Store negation BEFORE using it
+        Value* neg_max = storage.store(-*max_val_node);
+        Value* diff = storage.store(*val + *neg_max);
         Value* exp_val = storage.store(diff->exp());
         exps.push_back(exp_val);
         total = storage.store(*total + *exp_val);

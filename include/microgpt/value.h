@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cmath>
 #include <deque>
+#include <iostream>
 #include <limits>
 #include <memory>
 #include <set>
@@ -222,8 +223,15 @@ private:
             // Validate this node hasn't been corrupted
             assert(std::isfinite(v->data) && "Corrupted node in graph (NaN/inf data)");
             
-            for (Value* child : v->children_) {
+            for (size_t i = 0; i < v->children_.size(); ++i) {
+                Value* child = v->children_[i];
                 if (child == nullptr) {
+                    // Print debug info
+                    std::cerr << "Null child detected:" << std::endl;
+                    std::cerr << "  Parent Value at: " << v << std::endl;
+                    std::cerr << "  Parent data: " << v->data << std::endl;
+                    std::cerr << "  Child index: " << i << " of " << v->children_.size() << std::endl;
+                    std::cerr << "  Local grad: " << (i < v->local_grads_.size() ? v->local_grads_[i] : -999.0) << std::endl;
                     throw std::runtime_error("Null child pointer in graph traversal");
                 }
                 build_topo(child, topo, visited);
